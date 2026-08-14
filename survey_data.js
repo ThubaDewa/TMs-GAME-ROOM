@@ -1,0 +1,23 @@
+"use strict";
+module.exports = [
+  ["Name something people take to the beach.",[["Towel",32,["towels"]],["Sunscreen",25,["sunblock","sun cream"]],["Swimsuit",18,["bathing suit","costume","swimwear"]],["Umbrella",14,["parasol"]],["Cooler box",11,["cooler","coolbox","ice box"]]]],
+  ["Name something people do immediately after waking up.",[["Check their phone",30,["phone","check phone"]],["Use the bathroom",25,["toilet","bathroom","loo"]],["Brush their teeth",20,["brush teeth","teeth"]],["Make coffee",15,["coffee","tea"]],["Shower",10,["bath","wash"]]]],
+  ["Name something you might find in a school bag.",[["Books",31,["book","textbooks"]],["Pens",24,["pen","pencils","stationery"]],["Lunch",18,["food","lunchbox"]],["Notebook",15,["notepad","exercise book"]],["Calculator",12,["calculators"]]]],
+  ["Name a reason someone might be late for work.",[["Traffic",34,["traffic jam"]],["Overslept",25,["slept late","sleep"]],["Transport delay",17,["bus","train","taxi"]],["Car trouble",14,["car broke down","flat tyre"]],["Bad weather",10,["rain","weather"]]]],
+  ["Name something commonly served at a braai.",[["Meat",32,["steak","beef"]],["Boerewors",25,["wors","sausage"]],["Pap",18,["maize meal"]],["Chicken",14,["chicken wings"]],["Salad",11,["coleslaw"]]]],
+  ["Name something people keep next to their bed.",[["Phone",33,["cellphone","mobile"]],["Lamp",24,["light","bedside lamp"]],["Water",18,["water bottle","glass of water"]],["Alarm clock",15,["clock","alarm"]],["Book",10,["bible","novel"]]]],
+  ["Name something found in most kitchens.",[["Fridge",29,["refrigerator"]],["Stove",24,["oven","cooker"]],["Sink",19,["basin"]],["Microwave",16,["microwave oven"]],["Kettle",12,["electric kettle"]]]],
+  ["Name a popular household pet.",[["Dog",38,["dogs"]],["Cat",31,["cats"]],["Fish",13,["goldfish"]],["Bird",10,["parrot","birds"]],["Rabbit",8,["bunny"]]]],
+  ["Name something people lose regularly.",[["Keys",31,["key"]],["Phone",27,["cellphone","mobile"]],["Money",17,["cash","coins"]],["Remote control",14,["remote","tv remote"]],["Socks",11,["sock"]]]],
+  ["Name something you do before going on holiday.",[["Pack",34,["packing","pack bags"]],["Book accommodation",22,["book hotel","hotel"]],["Buy tickets",18,["flight","tickets"]],["Plan activities",15,["plan","itinerary"]],["Arrange transport",11,["transport","car hire"]]]],
+  ["Name a food people eat with their hands.",[["Pizza",27,["pizza slice"]],["Burger",24,["hamburger"]],["Chicken",20,["wings","chicken wings"]],["Sandwich",16,["sandwiches"]],["Chips",13,["fries","crisps"]]]],
+  ["Name something that makes a loud noise.",[["Thunder",28,["lightning storm"]],["Car horn",24,["horn","hooter"]],["Alarm",20,["siren"]],["Fireworks",16,["firework"]],["Aeroplane",12,["airplane","jet"]]]],
+  ["Name something people photograph at a wedding.",[["The couple",35,["bride and groom","newlyweds"]],["Wedding cake",22,["cake"]],["Family",18,["relatives"]],["First dance",14,["dance"]],["Decorations",11,["decor","flowers"]]]],
+  ["Name something you may see during a power cut.",[["Candles",35,["candle"]],["Torch",25,["flashlight"]],["Darkness",18,["dark"]],["Generator",13,["generators"]],["Power bank",9,["battery bank"]]]],
+  ["Name something children do during school break.",[["Play",34,["games","play games"]],["Eat",25,["lunch","snack"]],["Talk",19,["chat"]],["Run",13,["running"]],["Use their phones",9,["phone","cellphone"]]]],
+  ["Name something people check before leaving home.",[["Keys",28,["key"]],["Phone",25,["cellphone","mobile"]],["Wallet",19,["purse","money"]],["Doors",16,["lock","door lock"]],["Lights",12,["light","electricity"]]]],
+  ["Name a job that requires a uniform.",[["Police officer",30,["police","cop"]],["Nurse",24,["doctor"]],["Soldier",19,["army","military"]],["Pilot",15,["air hostess","flight attendant"]],["Security guard",12,["security"]]]],
+  ["Name something people do at a birthday party.",[["Eat cake",31,["cake"]],["Sing",25,["birthday song"]],["Dance",20,["dancing"]],["Give gifts",14,["presents","gifts"]],["Take photos",10,["photos","pictures"]]]],
+  ["Name something that can ruin an outdoor event.",[["Rain",38,["storm","bad weather"]],["Strong wind",21,["wind"]],["Power failure",16,["power cut","load shedding"]],["Insects",14,["mosquitoes","bugs"]],["Noise",11,["loud music"]]]],
+  ["Name something people buy at a petrol station besides fuel.",[["Snacks",29,["food","chips"]],["Cold drinks",24,["drink","water","soda"]],["Airtime",19,["data"]],["Coffee",16,["tea"]],["Car supplies",12,["oil","windscreen fluid"]]]]
+].map((q,i)=>({id:`survey_${String(i+1).padStart(3,"0")}`,question:q[0],answers:q[1].map(a=>({text:a[0],points:a[1],aliases:a[2]}))}));

@@ -1,6 +1,6 @@
 # TM’s GAME ROOM — Word Link
 
-A responsive 2–8 player browser game. The host and players can all use phones; nobody installs an app.
+A responsive 2–8 player browser game. The host and players can all use phones; nobody installs an app. The same room now includes **Word Link** and **Survey Showdown**.
 
 ## Run locally
 
@@ -24,3 +24,7 @@ Deploy this folder to a Node-compatible host such as Render, Railway, Fly.io or 
 - Version one intentionally has no TikTok integration.
 
 Because this first release does not use an external dictionary service, it validates the link and repetition rules but trusts players to enter real words. A host challenge/approval system or bundled dictionary can be added next.
+
+## Survey Showdown
+
+The host chooses free-for-all or two-team play. In team mode, players select Gold or Blue and each team must have at least two members. Five randomly selected 30-second surveys are played. The first player to reveal an answer earns its points (or earns them for the whole team). Fuzzy matching accepts aliases, plurals and minor spelling differences. The build includes 20 original survey boards.
