@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#071329"><title>TM’s GAME ROOM</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+  <main class="shell">
+    <header><div class="mini">WELCOME TO</div><h1>TM’s <span>GAME ROOM</span></h1><p class="tagline">LIVE • LINK • OUTLAST</p></header>
+    <section id="home" class="panel active">
+      <div class="hero-icon">🔗</div><h2>WORD LINK</h2><p>Link a new word using the final letter. Three strikes and you’re out!</p>
+      <label>Your nickname<input id="name" maxlength="20" autocomplete="nickname" placeholder="Enter your name"></label>
+      <button id="create" class="gold">CREATE A ROOM</button><div class="or"><span>OR JOIN FRIENDS</span></div>
+      <div class="join-row"><input id="code" maxlength="6" inputmode="text" placeholder="ROOM CODE"><button id="join">JOIN</button></div>
+      <p id="home-error" class="error"></p>
+    </section>
+    <section id="room" class="panel">
+      <div class="room-top"><div><small>ROOM CODE</small><button id="copy-code" class="room-code">------</button></div><div id="status-pill" class="pill">LOBBY</div></div>
+      <p id="share-hint">Tap the code to copy it and share with your friends.</p>
+      <div id="game-stage" class="game-stage hidden">
+        <div class="round">ROUND <b id="round">1</b></div><div id="timer" class="timer"><span>15</span></div>
+        <small>CURRENT WORD</small><div id="current-word" class="current-word">LIGHT</div><p id="rule-hint">Your word must begin with <b>T</b></p>
+        <form id="word-form"><input id="word" maxlength="24" autocapitalize="characters" autocomplete="off" placeholder="TYPE YOUR WORD"><button class="gold">LOCK IN</button></form>
+      </div>
+      <div id="winner" class="winner hidden"><div>🏆</div><small>WORD LINK CHAMPION</small><h2 id="winner-name"></h2></div>
+      <p id="message" class="message">Waiting for players…</p><h3>PLAYERS <span id="player-count">1/8</span></h3><div id="players" class="players"></div>
+      <button id="start" class="gold hidden">START GAME</button><button id="restart" class="gold hidden">PLAY AGAIN</button><button id="leave" class="ghost">LEAVE ROOM</button><p id="room-error" class="error"></p>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body></html>
