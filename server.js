@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const SURVEYS = require("./survey_data");
+const DRAW_WORDS = require("./draw_words");
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, "public");
@@ -37,16 +38,16 @@ function similar(a,b){
   for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
   return 1-d[a.length][b.length]/Math.max(a.length,b.length)>=.78;
 }
-const publicRoom = room => ({
-  code: room.code, phase: room.phase, hostId: room.hostId, game:room.game, mode:room.mode, currentWord: room.currentWord,
+const publicRoom = (room,viewerId) => ({
+  code: room.code, phase: room.phase, hostId: room.hostId, game:room.game, mode:room.mode, drawRounds:room.drawRounds, currentWord: room.currentWord,
   currentPlayerId: room.players[room.turn]?.id || null, deadline: room.deadline,
   round: room.round, winnerId: room.winnerId, winnerTeam:room.winnerTeam, message: room.message,
   survey: ["survey","survey-break"].includes(room.phase) ? {question:room.surveyQuestions[room.surveyIndex].question,index:room.surveyIndex+1,total:room.surveyQuestions.length,answers:room.surveyQuestions[room.surveyIndex].answers.map((a,i)=>room.found.has(i)||room.phase==="survey-break"?{text:a.text,points:a.points}:{text:"",points:0}),found:room.found.size} : null,
+  draw: ["draw","draw-break"].includes(room.phase) ? {turn:room.drawTurn,total:room.drawTotal,drawerId:room.drawerId,isDrawer:viewerId===room.drawerId,word:viewerId===room.drawerId||room.phase==="draw-break"?room.drawWord:"_ ".repeat(room.drawWord.length).trim(),wordLength:room.drawWord.length,strokes:room.strokes,guessed:[...room.guessed],lastGuesses:room.lastGuesses.slice(-8)} : null,
   players: room.players.map(({token, ...p}) => p)
 });
 function broadcast(room) {
-  const payload = `data: ${JSON.stringify(publicRoom(room))}\n\n`;
-  for (const res of clients.get(room.code) || []) res.write(payload);
+  for (const client of clients.get(room.code) || []) client.res.write(`data: ${JSON.stringify(publicRoom(room,client.playerId))}\n\n`);
 }
 function active(room) { return room.players.filter(p => !p.eliminated); }
 function nextTurn(room) {
@@ -83,6 +84,10 @@ function finishSurveyQuestion(room){
 }
 function startNextSurvey(room){room.surveyIndex++;room.found=new Set();room.round=room.surveyIndex+1;room.phase="survey";room.deadline=Date.now()+30000;room.message="New survey—go!";broadcast(room);}
 function chooseSurveys(count){const shuffled=[...SURVEYS].sort(()=>Math.random()-.5),chosen=[],groups=new Set();for(const q of shuffled){if(groups.has(q.group))continue;groups.add(q.group);chosen.push(q);if(chosen.length===count)break;}return chosen;}
+function makeDrawOrder(players,total){const order=[];while(order.length<total){const cycle=players.map(p=>p.id).sort(()=>Math.random()-.5);for(const id of cycle){if(order.length<total)order.push(id);}}return order;}
+function startDrawTurn(room){room.phase="draw";room.drawerId=room.drawOrder[room.drawTurn-1];room.drawWord=DRAW_WORDS[crypto.randomInt(DRAW_WORDS.length)];room.strokes=[];room.guessed=new Set();room.lastGuesses=[];room.deadline=Date.now()+60000;room.message=`${room.players.find(p=>p.id===room.drawerId)?.name} is drawing!`;broadcast(room);}
+function finishDrawTurn(room){if(room.phase!=="draw")return;room.deadline=0;room.phase="draw-break";room.message=`Time! The word was ${room.drawWord.toUpperCase()}.`;broadcast(room);}
+function nextDrawTurn(room){if(room.drawTurn>=room.drawTotal){room.phase="finished";room.deadline=0;room.winnerId=[...room.players].sort((a,b)=>b.score-a.score)[0]?.id||null;room.message="Draw & Guess champion crowned!";broadcast(room);return;}room.drawTurn++;startDrawTurn(room);}
 const timerSweep = setInterval(() => {
   const now = Date.now();
   for (const room of rooms.values()) {
@@ -90,6 +95,8 @@ const timerSweep = setInterval(() => {
       strike(room, room.players[room.turn], "time ran out");
     } else if (room.phase === "survey" && room.deadline && now >= room.deadline) {
       finishSurveyQuestion(room);
+    } else if (room.phase === "draw" && room.deadline && now >= room.deadline) {
+      finishDrawTurn(room);
     }
   }
 }, 250);
@@ -101,7 +108,7 @@ async function api(req, res, route) {
     const name = cleanName(body.name); if (!name) return json(res, 400, {error:"Enter your name."});
     const roomCode = code(), playerId = id(), token = id();
     const player = {id:playerId, token, name, strikes:0, eliminated:false, connected:true, host:true,team:"gold",score:0};
-    const room = {code:roomCode, hostId:playerId, phase:"lobby", game:"wordlink",mode:"ffa",players:[player], turn:0, currentWord:"", used:new Set(), deadline:0, timerSeconds:15, round:0, winnerId:null,winnerTeam:null,surveyQuestions:[],surveyIndex:0,found:new Set(), message:"Room created. Share the code!", createdAt:Date.now()};
+    const room = {code:roomCode, hostId:playerId, phase:"lobby", game:"wordlink",mode:"ffa",players:[player], turn:0, currentWord:"", used:new Set(), deadline:0, timerSeconds:15, round:0, winnerId:null,winnerTeam:null,surveyQuestions:[],surveyIndex:0,found:new Set(),drawRounds:5,drawTurn:0,drawTotal:0,drawOrder:[],drawerId:null,drawWord:"",strokes:[],guessed:new Set(),lastGuesses:[], message:"Room created. Share the code!", createdAt:Date.now()};
     rooms.set(roomCode, room); return json(res, 200, {code:roomCode, playerId, token});
   }
   if (route === "/api/join" && req.method === "POST") {
@@ -120,9 +127,10 @@ async function api(req, res, route) {
   if (!room || !player) return json(res, 403, {error:"Your room session is no longer valid."});
   if (route === "/api/configure") {
     if (player.id !== room.hostId || room.phase !== "lobby") return json(res,403,{error:"Only the host can configure the lobby."});
-    if (["wordlink","survey"].includes(body.game)) room.game=body.game;
+    if (["wordlink","survey","draw"].includes(body.game)) room.game=body.game;
     if (["ffa","teams"].includes(body.mode)) room.mode=body.mode;
-    room.message=room.game==="survey"?"Survey Showdown selected!":"Word Link selected!";broadcast(room);return json(res,200,{ok:true});
+    if([5,10].includes(Number(body.rounds)))room.drawRounds=Number(body.rounds);
+    room.message=room.game==="survey"?"Survey Showdown selected!":room.game==="draw"?"Draw & Guess selected!":"Word Link selected!";broadcast(room);return json(res,200,{ok:true});
   }
   if (route === "/api/team") {
     if (room.phase!=="lobby" || !["gold","blue"].includes(body.team)) return json(res,400,{error:"Team cannot be changed now."});
@@ -131,6 +139,9 @@ async function api(req, res, route) {
   if (route === "/api/start") {
     if (player.id !== room.hostId) return json(res, 403, {error:"Only the host can start."});
     if (room.players.length < 2) return json(res, 409, {error:"At least two players are required."});
+    if(room.game==="draw"){
+      room.players.forEach(p=>p.score=0);room.drawTotal=Math.max(room.drawRounds,room.players.length);room.drawOrder=makeDrawOrder(room.players,room.drawTotal);room.drawTurn=1;room.winnerId=null;startDrawTurn(room);return json(res,200,{ok:true});
+    }
     if(room.game==="survey"){
       if(room.mode==="teams"){
         const gold=room.players.filter(p=>p.team==="gold").length,blue=room.players.filter(p=>p.team==="blue").length;
@@ -140,6 +151,24 @@ async function api(req, res, route) {
     }
     room.players.forEach(p => {p.strikes=0; p.eliminated=false;p.score=0;}); room.phase="playing"; room.turn=crypto.randomInt(room.players.length);
     room.currentWord=STARTERS[crypto.randomInt(STARTERS.length)]; room.used=new Set([room.currentWord]); room.round=1; room.winnerId=null; room.deadline=Date.now()+room.timerSeconds*1000; room.message="Game on! Link a word."; broadcast(room); return json(res, 200, {ok:true});
+  }
+  if(route==="/api/draw-stroke"){
+    if(room.phase!=="draw"||player.id!==room.drawerId)return json(res,403,{error:"Only the current drawer can draw."});
+    const color=/^#[0-9a-f]{6}$/i.test(body.color)?body.color:"#14213d",size=Math.max(2,Math.min(30,Number(body.size)||6));
+    const points=Array.isArray(body.points)?body.points.slice(0,30).map(p=>[Math.max(0,Math.min(1,Number(p[0]))),Math.max(0,Math.min(1,Number(p[1])))]):[];
+    if(points.length){room.strokes.push({color,size,points});if(room.strokes.length>2500)room.strokes.shift();broadcast(room);}return json(res,200,{ok:true});
+  }
+  if(route==="/api/clear-drawing"){
+    if(room.phase!=="draw"||player.id!==room.drawerId)return json(res,403,{error:"Only the current drawer can clear."});room.strokes=[];broadcast(room);return json(res,200,{ok:true});
+  }
+  if(route==="/api/draw-guess"){
+    if(room.phase!=="draw"||player.id===room.drawerId||room.guessed.has(player.id))return json(res,409,{error:"You cannot guess right now."});
+    const guess=cleanPhrase(body.guess);if(!guess)return json(res,400,{error:"Enter a guess."});
+    if(similar(guess,cleanPhrase(room.drawWord))){const remaining=Math.max(0,room.deadline-Date.now()),base=100,speed=Math.round(400*remaining/60000),first=room.guessed.size===0?100:0,gained=base+speed+first;player.score+=gained;room.guessed.add(player.id);const drawer=room.players.find(p=>p.id===room.drawerId);if(drawer)drawer.score+=50;room.lastGuesses.push({name:player.name,text:"GUESSED IT!",correct:true});room.message=`${player.name} guessed correctly for ${gained} points!`;if(room.guessed.size>=room.players.length-1)finishDrawTurn(room);else broadcast(room);return json(res,200,{ok:true,points:gained});}
+    room.lastGuesses.push({name:player.name,text:String(body.guess).slice(0,28),correct:false});room.message=`${player.name} submitted a guess.`;broadcast(room);return json(res,200,{ok:false});
+  }
+  if(route==="/api/next-draw"){
+    if(player.id!==room.hostId||room.phase!=="draw-break")return json(res,403,{error:"Only the host can continue."});nextDrawTurn(room);return json(res,200,{ok:true});
   }
   if(route==="/api/survey-answer"){
     if(room.phase!=="survey")return json(res,409,{error:"The survey round is not active."});
@@ -168,7 +197,7 @@ async function api(req, res, route) {
   }
   if (route === "/api/restart") {
     if (player.id !== room.hostId) return json(res, 403, {error:"Only the host can restart."});
-    room.phase="lobby"; room.deadline=0; room.currentWord=""; room.winnerId=null;room.winnerTeam=null; room.players.forEach(p => {p.strikes=0;p.eliminated=false;p.score=0;}); room.message="Ready for a rematch."; broadcast(room); return json(res, 200, {ok:true});
+    room.phase="lobby"; room.deadline=0; room.currentWord=""; room.winnerId=null;room.winnerTeam=null;room.drawerId=null;room.strokes=[]; room.players.forEach(p => {p.strikes=0;p.eliminated=false;p.score=0;}); room.message="Ready for a rematch."; broadcast(room); return json(res, 200, {ok:true});
   }
   if (route === "/api/remove") {
     if (player.id !== room.hostId) return json(res, 403, {error:"Only the host can remove players."});
@@ -184,11 +213,12 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     if (url.pathname === "/events") {
       const room = rooms.get(String(url.searchParams.get("code") || "").toUpperCase());
-      if (!room) return json(res, 404, {error:"Room not found"});
+      const viewer=room?.players.find(p=>p.id===url.searchParams.get("playerId")&&p.token===url.searchParams.get("token"));
+      if (!room||!viewer) return json(res, 403, {error:"Room session not found"});
       res.writeHead(200, {"content-type":"text/event-stream", "cache-control":"no-cache", "connection":"keep-alive", "access-control-allow-origin":"*"});
-      if (!clients.has(room.code)) clients.set(room.code, new Set()); clients.get(room.code).add(res);
-      res.write(`data: ${JSON.stringify(publicRoom(room))}\n\n`);
-      req.on("close", () => clients.get(room.code)?.delete(res)); return;
+      if (!clients.has(room.code)) clients.set(room.code, new Set()); const client={res,playerId:viewer.id};clients.get(room.code).add(client);
+      res.write(`data: ${JSON.stringify(publicRoom(room,viewer.id))}\n\n`);
+      req.on("close", () => clients.get(room.code)?.delete(client)); return;
     }
     if (url.pathname.startsWith("/api/")) return await api(req, res, url.pathname);
     let file = url.pathname === "/" ? "/index.html" : url.pathname;

@@ -1,0 +1,4 @@
+"use strict";
+module.exports = [
+"apple","aeroplane","alarm clock","anchor","ant","backpack","balloon","banana","basket","beach","bee","bicycle","birthday cake","boat","book","boot","bridge","broom","burger","butterfly","camera","candle","car","castle","cat","chair","cheese","clock","cloud","coffee cup","crown","diamond","dog","door","dragon","drum","duck","elephant","eye","fire","fish","flower","football","fork","frog","giraffe","glasses","guitar","hammer","hat","heart","helicopter","horse","house","ice cream","island","key","kite","ladder","lamp","laptop","leaf","lion","moon","mountain","mushroom","octopus","paintbrush","palm tree","pencil","penguin","pizza","plane","rabbit","rainbow","robot","rocket","sandwich","school bus","shoe","snake","snowman","spider","spoon","star","strawberry","sun","sunglasses","table","telephone","tent","toothbrush","train","tree","trophy","truck","umbrella","watch","watermelon","whale","wheel","window","zebra"
+];

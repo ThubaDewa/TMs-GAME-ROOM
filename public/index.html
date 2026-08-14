@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#071329"><title>TM’s GAME ROOM</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/survey.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#071329"><title>TM’s GAME ROOM</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/survey.css"><link rel="stylesheet" href="/draw.css"></head>
 <body>
   <main class="shell">
     <header><div class="mini">WELCOME TO</div><h1>TM’s <span>GAME ROOM</span></h1><p class="tagline">LIVE • LINK • OUTLAST</p></header>
@@ -14,7 +14,7 @@
     <section id="room" class="panel">
       <div class="room-top"><div><small>ROOM CODE</small><button id="copy-code" class="room-code">------</button></div><div id="status-pill" class="pill">LOBBY</div></div>
       <p id="share-hint">Tap the code to copy it and share with your friends.</p>
-      <div id="game-picker" class="game-picker"><small>HOST: CHOOSE A GAME</small><div class="choice-row"><button data-game="wordlink" class="choice selected">🔗<b>WORD LINK</b></button><button data-game="survey" class="choice">📊<b>SURVEY SHOWDOWN</b></button></div><div id="mode-picker" class="hidden"><small>CHOOSE A FORMAT</small><div class="choice-row"><button data-mode="ffa" class="choice selected">👤<b>FREE FOR ALL</b></button><button data-mode="teams" class="choice">👥<b>TWO TEAMS</b></button></div></div></div>
+      <div id="game-picker" class="game-picker"><small>HOST: CHOOSE A GAME</small><div class="choice-row"><button data-game="wordlink" class="choice selected">🔗<b>WORD LINK</b></button><button data-game="survey" class="choice">📊<b>SURVEY SHOWDOWN</b></button><button data-game="draw" class="choice">🎨<b>DRAW & GUESS</b></button></div><div id="mode-picker" class="hidden"><small>CHOOSE A FORMAT</small><div class="choice-row"><button data-mode="ffa" class="choice selected">👤<b>FREE FOR ALL</b></button><button data-mode="teams" class="choice">👥<b>TWO TEAMS</b></button></div></div><div id="draw-rounds-picker" class="hidden"><small>DRAWING TURNS</small><div class="choice-row"><button data-rounds="5" class="choice selected"><b>5 TURNS</b></button><button data-rounds="10" class="choice"><b>10 TURNS</b></button></div><small>Everyone draws once before anyone repeats.</small></div></div>
       <div id="team-picker" class="team-picker hidden"><p>CHOOSE YOUR TEAM</p><div><button data-team="gold" class="team gold">GOLD TEAM</button><button data-team="blue" class="team blue">BLUE TEAM</button></div><small>At least two players are required on each team.</small></div>
       <div id="game-stage" class="game-stage hidden">
         <div class="round">ROUND <b id="round">1</b></div><div id="timer" class="timer"><span>15</span></div>
@@ -22,9 +22,10 @@
         <form id="word-form"><input id="word" maxlength="24" autocapitalize="characters" autocomplete="off" placeholder="TYPE YOUR WORD"><button class="gold">LOCK IN</button></form>
       </div>
       <div id="survey-stage" class="survey-stage hidden"><div class="round">SURVEY <b id="survey-round">1/5</b></div><div id="survey-timer" class="timer"><span>30</span></div><h2 id="survey-question">Survey question</h2><div id="survey-board" class="survey-board"></div><form id="survey-form"><input id="survey-answer" maxlength="40" autocomplete="off" placeholder="TYPE YOUR ANSWER"><button class="gold">SUBMIT</button></form></div>
+      <div id="draw-stage" class="draw-stage hidden"><div class="draw-head"><div class="round">TURN <b id="draw-round">1/5</b></div><div id="draw-timer" class="timer"><span>60</span></div><div><small>WORD</small><b id="draw-word">_ _ _ _</b></div></div><p id="drawer-label">TM Host is drawing</p><div class="canvas-wrap"><canvas id="draw-canvas" width="1200" height="675"></canvas><div id="canvas-lock" class="canvas-lock">WATCH THE DRAWING</div></div><div id="draw-tools" class="draw-tools hidden"><input id="draw-colour" type="color" value="#14213d" aria-label="Brush colour"><label>BRUSH<input id="draw-size" type="range" min="2" max="30" value="7"></label><button id="draw-clear" type="button">CLEAR</button></div><div id="guess-feed" class="guess-feed"></div><form id="draw-guess-form"><input id="draw-guess" maxlength="30" autocomplete="off" placeholder="TYPE YOUR GUESS"><button class="gold">GUESS</button></form></div>
       <div id="winner" class="winner hidden"><div>🏆</div><small>WORD LINK CHAMPION</small><h2 id="winner-name"></h2></div>
       <p id="message" class="message">Waiting for players…</p><h3>PLAYERS <span id="player-count">1/8</span></h3><div id="players" class="players"></div>
-      <button id="start" class="gold hidden">START GAME</button><button id="next-survey" class="gold hidden">NEXT SURVEY</button><button id="restart" class="gold hidden">PLAY AGAIN</button><button id="leave" class="ghost">LEAVE ROOM</button><p id="room-error" class="error"></p>
+      <button id="start" class="gold hidden">START GAME</button><button id="next-survey" class="gold hidden">NEXT SURVEY</button><button id="next-draw" class="gold hidden">NEXT DRAWING</button><button id="restart" class="gold hidden">PLAY AGAIN</button><button id="leave" class="ghost">LEAVE ROOM</button><p id="room-error" class="error"></p>
     </section>
   </main>
   <script src="/app.js"></script>
