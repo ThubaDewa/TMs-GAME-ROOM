@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "description": "Phone-friendly multiplayer TM's Word Link game",
-  "scripts": {"start": "node server.js", "test": "node --test"},
+  "scripts": {"start": "node server.js", "test": "node --test && node tools/validate_surveys.js"},
   "engines": {"node": ">=20"}
 }

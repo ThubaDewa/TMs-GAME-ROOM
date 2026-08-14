@@ -27,4 +27,6 @@ Because this first release does not use an external dictionary service, it valid
 
 ## Survey Showdown
 
-The host chooses free-for-all or two-team play. In team mode, players select Gold or Blue and each team must have at least two members. Five randomly selected 30-second surveys are played. The first player to reveal an answer earns its points (or earns them for the whole team). Fuzzy matching accepts aliases, plurals and minor spelling differences. The build includes 20 original survey boards.
+The host chooses free-for-all or two-team play. In team mode, players select Gold or Blue and each team must have at least two members. Five randomly selected 30-second surveys are played. The first player to reveal an answer earns its points (or earns them for the whole team). Fuzzy matching accepts aliases, plurals and minor spelling differences. The build includes 200 survey boards: 180 focused on general life and 20 mixed everyday topics.
+
+Validate the full survey pack with `node tools/validate_surveys.js`.

@@ -20,4 +20,4 @@ module.exports = [
   ["Name something people do at a birthday party.",[["Eat cake",31,["cake"]],["Sing",25,["birthday song"]],["Dance",20,["dancing"]],["Give gifts",14,["presents","gifts"]],["Take photos",10,["photos","pictures"]]]],
   ["Name something that can ruin an outdoor event.",[["Rain",38,["storm","bad weather"]],["Strong wind",21,["wind"]],["Power failure",16,["power cut","load shedding"]],["Insects",14,["mosquitoes","bugs"]],["Noise",11,["loud music"]]]],
   ["Name something people buy at a petrol station besides fuel.",[["Snacks",29,["food","chips"]],["Cold drinks",24,["drink","water","soda"]],["Airtime",19,["data"]],["Coffee",16,["tea"]],["Car supplies",12,["oil","windscreen fluid"]]]]
-].map((q,i)=>({id:`survey_${String(i+1).padStart(3,"0")}`,question:q[0],answers:q[1].map(a=>({text:a[0],points:a[1],aliases:a[2]}))}));
+].map((q,i)=>({id:`survey_${String(i+1).padStart(3,"0")}`,category:"Mixed Life",group:`mixed_${i+1}`,question:q[0],answers:q[1].map(a=>({text:a[0],points:a[1],aliases:a[2]}))})).concat(require("./survey_general_life"));

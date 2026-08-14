@@ -82,6 +82,7 @@ function finishSurveyQuestion(room){
   broadcast(room);
 }
 function startNextSurvey(room){room.surveyIndex++;room.found=new Set();room.round=room.surveyIndex+1;room.phase="survey";room.deadline=Date.now()+30000;room.message="New survey—go!";broadcast(room);}
+function chooseSurveys(count){const shuffled=[...SURVEYS].sort(()=>Math.random()-.5),chosen=[],groups=new Set();for(const q of shuffled){if(groups.has(q.group))continue;groups.add(q.group);chosen.push(q);if(chosen.length===count)break;}return chosen;}
 const timerSweep = setInterval(() => {
   const now = Date.now();
   for (const room of rooms.values()) {
@@ -135,7 +136,7 @@ async function api(req, res, route) {
         const gold=room.players.filter(p=>p.team==="gold").length,blue=room.players.filter(p=>p.team==="blue").length;
         if(gold<2||blue<2)return json(res,409,{error:"Team mode needs at least two players on Gold Team and two on Blue Team."});
       }
-      room.players.forEach(p=>p.score=0);room.surveyQuestions=[...SURVEYS].sort(()=>Math.random()-.5).slice(0,5);room.surveyIndex=0;room.found=new Set();room.phase="survey";room.round=1;room.deadline=Date.now()+30000;room.winnerId=null;room.winnerTeam=null;room.message="Survey is live—submit your best answers!";broadcast(room);return json(res,200,{ok:true});
+      room.players.forEach(p=>p.score=0);room.surveyQuestions=chooseSurveys(5);room.surveyIndex=0;room.found=new Set();room.phase="survey";room.round=1;room.deadline=Date.now()+30000;room.winnerId=null;room.winnerTeam=null;room.message="Survey is live—submit your best answers!";broadcast(room);return json(res,200,{ok:true});
     }
     room.players.forEach(p => {p.strikes=0; p.eliminated=false;p.score=0;}); room.phase="playing"; room.turn=crypto.randomInt(room.players.length);
     room.currentWord=STARTERS[crypto.randomInt(STARTERS.length)]; room.used=new Set([room.currentWord]); room.round=1; room.winnerId=null; room.deadline=Date.now()+room.timerSeconds*1000; room.message="Game on! Link a word."; broadcast(room); return json(res, 200, {ok:true});
