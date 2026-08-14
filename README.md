@@ -1,6 +1,6 @@
 # TM’s GAME ROOM — Word Link
 
-A responsive 2–8 player browser game. The host and players can all use phones; nobody installs an app. The same room now includes **Word Link**, **Survey Showdown**, and **Draw & Guess**.
+A responsive multiplayer browser game. The host and players can all use phones; nobody installs an app. The same room now includes **Word Link**, **Survey Showdown**, **Draw & Guess**, and **TM’s Royal Race**.
 
 ## Run locally
 
@@ -36,3 +36,7 @@ Validate the full survey pack with `node tools/validate_surveys.js`.
 The host selects 5 or 10 total drawing turns. If there are more players than selected turns, the game automatically increases the total so every player draws at least once before anyone repeats. Each turn lasts 60 seconds. Only the drawer receives the secret word; other authenticated players receive a masked word and the synchronized canvas.
 
 The canvas uses a fixed 1200×675 backing surface and normalized pointer coordinates for accurate mouse, stylus, and multi-direction finger drawing at any responsive display size. Correct guesses earn 100 base points plus up to 400 time points. The first correct guess earns another 100 points, and the drawer receives 50 points for every correct guesser.
+
+## TM’s Royal Race
+
+An original 2–4 player cross-and-circle race game with four tokens per colour. Players choose Gold, Blue, Green or Red. The authoritative server generates dice rolls and validates releases, legal moves, captures, safe cells, bonus rolls, exact home-lane movement, timed turns and final placements. The 900×900 logical board and touch targets scale together for accurate phone and desktop input. This project uses original TM branding and does not include Ludo King artwork or branding.
