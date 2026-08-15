@@ -21,7 +21,7 @@ const json = (res, status, body) => {
 };
 const readBody = req => new Promise((resolve, reject) => {
   let data = "";
-  req.on("data", c => { data += c; if (data.length > 20000) reject(new Error("Request too large")); });
+  req.on("data", c => { data += c; if (data.length > 120000) reject(new Error("Request too large")); });
   req.on("end", () => { try { resolve(data ? JSON.parse(data) : {}); } catch { reject(new Error("Invalid JSON")); } });
 });
 const code = () => {
@@ -34,6 +34,8 @@ const id = () => crypto.randomBytes(12).toString("hex");
 const cleanName = value => String(value || "").replace(/[<>]/g, "").trim().slice(0, 20);
 const cleanWord = value => String(value || "").trim().toUpperCase().replace(/[^A-Z]/g, "").slice(0, 24);
 const cleanPhrase = value => String(value || "").toLowerCase().replace(/[^a-z0-9 ]/g,"").replace(/\s+/g," ").trim();
+const cleanChat = value => String(value||"").replace(/<[^>]*>/g,"").replace(/[<>]/g,"").replace(/\s+/g," ").trim().slice(0,180);
+const freshStats=()=>({wordlink:{games:0,wins:0,xp:0},survey:{games:0,wins:0,xp:0},draw:{games:0,wins:0,xp:0},royal:{games:0,wins:0,xp:0}});
 function similar(a,b){
   if(a===b||a.length>=4&&(a.includes(b)||b.includes(a)))return true;
   const d=Array.from({length:a.length+1},(_,i)=>[i]);for(let j=1;j<=b.length;j++)d[0][j]=j;
@@ -41,6 +43,8 @@ function similar(a,b){
   return 1-d[a.length][b.length]/Math.max(a.length,b.length)>=.78;
 }
 function smoothStrokePoints(points){if(points.length<3)return points;const result=[points[0]];for(let i=1;i<points.length-1;i++){const a=points[i-1],b=points[i],c=points[i+1];result.push([a[0]*.18+b[0]*.64+c[0]*.18,a[1]*.18+b[1]*.64+c[1]*.18])}result.push(points.at(-1));return result}
+function leaderboard(room,game="all"){return room.players.map(p=>{const stat=game==="all"?null:p.gameStats?.[game];return {id:p.id,name:p.name,xp:stat?.xp??p.totalXp??0,wins:stat?.wins??p.wins??0,games:stat?.games??p.gamesPlayed??0,level:Math.max(1,Math.floor((stat?.xp??p.totalXp??0)/1000)+1)}}).sort((a,b)=>b.xp-a.xp||b.wins-a.wins||a.name.localeCompare(b.name))}
+function recordResults(room){if(room.resultsRecorded||room.phase!=="finished")return;let order=room.game==="royal"?[...room.royalPlacements]:[...room.players].sort((a,b)=>b.score-a.score).map(p=>p.id);if(room.winnerId)order=[room.winnerId,...order.filter(id=>id!==room.winnerId)];for(const p of room.players)if(!order.includes(p.id))order.push(p.id);const awards=[600,400,300,220,170,130,100,80],results=[];order.forEach((id,rank)=>{const p=room.players.find(x=>x.id===id);if(!p)return;const teamWin=room.game==="survey"&&room.mode==="teams"&&room.winnerTeam===p.team,isWinner=id===room.winnerId||teamWin,performance=room.game==="wordlink"?Math.min(400,p.score):Math.min(400,Math.round(p.score*.35)),xp=(awards[rank]||60)+performance+(isWinner?100:0);p.totalXp=(p.totalXp||0)+xp;p.gamesPlayed=(p.gamesPlayed||0)+1;if(isWinner)p.wins=(p.wins||0)+1;const stat=p.gameStats[room.game];stat.games++;stat.xp+=xp;if(isWinner)stat.wins++;results.push({playerId:id,rank:rank+1,xp,score:p.score})});room.lastResults=results;room.resultsRecorded=true}
 const publicRoom = (room,viewerId) => ({
   code: room.code, phase: room.phase, hostId: room.hostId, game:room.game, mode:room.mode, drawRounds:room.drawRounds, currentWord: room.currentWord,
   currentPlayerId: room.players[room.turn]?.id || null, deadline: room.deadline,
@@ -48,6 +52,7 @@ const publicRoom = (room,viewerId) => ({
   survey: ["survey","survey-break"].includes(room.phase) ? {question:room.surveyQuestions[room.surveyIndex].question,index:room.surveyIndex+1,total:room.surveyQuestions.length,answers:room.surveyQuestions[room.surveyIndex].answers.map((a,i)=>room.found.has(i)||room.phase==="survey-break"?{text:a.text,points:a.points}:{text:"",points:0}),found:room.found.size} : null,
   draw: ["draw","draw-break"].includes(room.phase) ? {turn:room.drawTurn,total:room.drawTotal,drawerId:room.drawerId,isDrawer:viewerId===room.drawerId,word:viewerId===room.drawerId||room.phase==="draw-break"?room.drawWord:"_ ".repeat(room.drawWord.length).trim(),wordLength:room.drawWord.length,strokes:room.strokes,guessed:[...room.guessed],lastGuesses:room.lastGuesses.slice(-8)} : null,
   royal: room.phase === "royal" ? {turnPlayerId:room.royalOrder[room.royalTurn]||null,dice:room.royalDice,legal:room.royalOrder[room.royalTurn]===viewerId?room.royalLegal:[],tokens:room.royalTokens,placements:room.royalPlacements,lastMove:room.royalLastMove} : null,
+  chat:(room.chat||[]).slice(-60),voiceSignals:(room.voiceSignals||[]).filter(s=>s.to===viewerId).slice(-80),leaderboards:{all:leaderboard(room),wordlink:leaderboard(room,"wordlink"),survey:leaderboard(room,"survey"),draw:leaderboard(room,"draw"),royal:leaderboard(room,"royal")},lastResults:room.lastResults||[],
   players: room.players.map(({token, ...p}) => p)
 });
 function broadcast(room) {
@@ -58,13 +63,13 @@ function nextTurn(room) {
   if (active(room).length <= 1) {
     room.phase = "finished"; room.winnerId = active(room)[0]?.id || null; room.deadline = 0;
     room.message = room.winnerId ? "We have a Word Link champion!" : "No winner this round.";
-    broadcast(room); return;
+    recordResults(room);broadcast(room); return;
   }
   let tries = 0;
   do { room.turn = (room.turn + 1) % room.players.length; tries++; }
   while (room.players[room.turn].eliminated && tries <= room.players.length);
   room.deadline = Date.now() + room.timerSeconds * 1000;
-  broadcast(room);
+  if(room.phase==="finished")recordResults(room);broadcast(room);
 }
 function strike(room, player, reason) {
   player.strikes++;
@@ -84,14 +89,14 @@ function finishSurveyQuestion(room){
       const sorted=[...room.players].sort((a,b)=>b.score-a.score);room.winnerId=sorted[0]?.id||null;room.message="Survey Showdown champion crowned!";
     }
   }else{room.phase="survey-break";room.message=`Question ${room.surveyIndex+1} complete. Host, reveal the next survey!`;}
-  broadcast(room);
+  if(room.phase==="finished")recordResults(room);broadcast(room);
 }
 function startNextSurvey(room){room.surveyIndex++;room.found=new Set();room.round=room.surveyIndex+1;room.phase="survey";room.deadline=Date.now()+30000;room.message="New survey—go!";broadcast(room);}
 function chooseSurveys(count){const shuffled=[...SURVEYS].sort(()=>Math.random()-.5),chosen=[],groups=new Set();for(const q of shuffled){if(groups.has(q.group))continue;groups.add(q.group);chosen.push(q);if(chosen.length===count)break;}return chosen;}
 function makeDrawOrder(players,total){const order=[];while(order.length<total){const cycle=players.map(p=>p.id).sort(()=>Math.random()-.5);for(const id of cycle){if(order.length<total)order.push(id);}}return order;}
 function startDrawTurn(room){room.phase="draw";room.drawerId=room.drawOrder[room.drawTurn-1];room.drawWord=DRAW_WORDS[crypto.randomInt(DRAW_WORDS.length)];room.strokes=[];room.guessed=new Set();room.lastGuesses=[];room.deadline=Date.now()+60000;room.message=`${room.players.find(p=>p.id===room.drawerId)?.name} is drawing!`;broadcast(room);}
 function finishDrawTurn(room){if(room.phase!=="draw")return;room.deadline=0;room.phase="draw-break";room.message=`Time! The word was ${room.drawWord.toUpperCase()}.`;broadcast(room);}
-function nextDrawTurn(room){if(room.drawTurn>=room.drawTotal){room.phase="finished";room.deadline=0;room.winnerId=[...room.players].sort((a,b)=>b.score-a.score)[0]?.id||null;room.message="Draw & Guess champion crowned!";broadcast(room);return;}room.drawTurn++;startDrawTurn(room);}
+function nextDrawTurn(room){if(room.drawTurn>=room.drawTotal){room.phase="finished";room.deadline=0;room.winnerId=[...room.players].sort((a,b)=>b.score-a.score)[0]?.id||null;room.message="Draw & Guess champion crowned!";recordResults(room);broadcast(room);return;}room.drawTurn++;startDrawTurn(room);}
 function removePlayer(room,targetId,reason="left the room"){
 	const targetIndex=room.players.findIndex(p=>p.id===targetId);if(targetIndex<0)return false;
 	const target=room.players[targetIndex],wasHost=target.id===room.hostId,wasWordTurn=room.phase==="playing"&&room.players[room.turn]?.id===target.id;
@@ -103,7 +108,7 @@ function removePlayer(room,targetId,reason="left the room"){
 	if(wasHost){room.hostId=room.players[0].id;room.players.forEach(p=>p.host=p.id===room.hostId)}
 	room.message=`${target.name} ${reason} and was removed from the game.${wasHost?` ${room.players[0].name} is now host.`:""}`;
 	if(room.phase==="lobby"){broadcast(room);return true}
-	if(room.players.length===1){room.phase="finished";room.deadline=0;room.winnerId=room.players[0].id;room.message+=` ${room.players[0].name} is the remaining player.`;broadcast(room);return true}
+	if(room.players.length===1){room.phase="finished";room.deadline=0;room.winnerId=room.players[0].id;room.message+=` ${room.players[0].name} is the remaining player.`;recordResults(room);broadcast(room);return true}
 	if(room.phase==="playing"){
 		if(targetIndex<room.turn)room.turn--;if(wasWordTurn){room.turn=Math.min(targetIndex,room.players.length-1);let tries=0;while(room.players[room.turn].eliminated&&tries++<room.players.length)room.turn=(room.turn+1)%room.players.length;room.deadline=Date.now()+room.timerSeconds*1000}broadcast(room);return true
 	}
@@ -118,7 +123,7 @@ function removePlayer(room,targetId,reason="left the room"){
 }
 function royalTrack(color,progress){return progress>=0&&progress<52?(ROYAL_OFFSETS[color]+progress)%52:null;}
 function royalLegal(room,playerId,dice){const tokens=room.royalTokens[playerId]||[];return tokens.map((p,i)=>({p,i})).filter(x=>x.p<58&&((x.p===-1&&dice===6)||(x.p>=0&&x.p+dice<=58))).map(x=>x.i);}
-function royalMaybeFinish(room){const active=room.royalOrder.filter(id=>{const p=room.players.find(x=>x.id===id);return p&&!p.royalKicked&&!room.royalPlacements.includes(id)});if(active.length>1)return false;if(active.length===1)room.royalPlacements.push(active[0]);room.phase="finished";room.deadline=0;room.winnerId=room.royalPlacements[0]||null;room.message="The Royal Race is complete!";broadcast(room);return true;}
+function royalMaybeFinish(room){const active=room.royalOrder.filter(id=>{const p=room.players.find(x=>x.id===id);return p&&!p.royalKicked&&!room.royalPlacements.includes(id)});if(active.length>1)return false;if(active.length===1)room.royalPlacements.push(active[0]);room.phase="finished";room.deadline=0;room.winnerId=room.royalPlacements[0]||null;room.message="The Royal Race is complete!";recordResults(room);broadcast(room);return true;}
 function royalNext(room){if(royalMaybeFinish(room))return;let tries=0;do{room.royalTurn=(room.royalTurn+1)%room.royalOrder.length;tries++;const p=room.players.find(x=>x.id===room.royalOrder[room.royalTurn]);if(p&&!p.royalKicked&&!room.royalPlacements.includes(p.id))break;}while(tries<=room.royalOrder.length);room.royalDice=null;room.royalLegal=[];room.deadline=Date.now()+ROYAL_TURN_MS;room.message=`${room.players.find(p=>p.id===room.royalOrder[room.royalTurn])?.name}'s turn.`;broadcast(room);}
 function royalTimeout(room){const id=room.royalOrder[room.royalTurn],player=room.players.find(p=>p.id===id);if(!player)return royalNext(room);player.royalTimeouts=(player.royalTimeouts||0)+1;room.royalDice=null;room.royalLegal=[];if(player.royalTimeouts>=3){player.royalKicked=true;room.royalTokens[player.id]=[];room.message=`${player.name} missed three timers and was removed from the race.`;}else room.message=`${player.name} ran out of time — timer strike ${player.royalTimeouts}/3.`;broadcast(room);if(!royalMaybeFinish(room))royalNext(room);}
 function royalMove(room,playerId,tokenIndex){if(!room.royalLegal.includes(tokenIndex))return false;const player=room.players.find(p=>p.id===playerId),tokens=room.royalTokens[playerId],old=tokens[tokenIndex];tokens[tokenIndex]=old===-1?0:old+room.royalDice;const reachedHome=old<58&&tokens[tokenIndex]===58;let captured=false;const capturedTokens=[],landed=royalTrack(player.royalColor,tokens[tokenIndex]);if(landed!==null&&!ROYAL_SAFE.has(landed)){for(const opponent of room.players){if(opponent.id===playerId||opponent.royalKicked)continue;room.royalTokens[opponent.id].forEach((p,i)=>{if(royalTrack(opponent.royalColor,p)===landed){capturedTokens.push({playerId:opponent.id,tokenIndex:i,fromProgress:p,toProgress:-1});room.royalTokens[opponent.id][i]=-1;captured=true;}})}}room.royalLastMove={moveId:++room.royalMoveSeq,playerId,tokenIndex,dice:room.royalDice,fromProgress:old,toProgress:tokens[tokenIndex],captured,capturedTokens,reachedHome};room.message=reachedHome?`${player.name} brought a token home!`:captured?`${player.name} captured a token!`:`${player.name} moved token ${tokenIndex+1}.`;if(tokens.every(p=>p===58)&&!room.royalPlacements.includes(playerId))room.royalPlacements.push(playerId);if(royalMaybeFinish(room))return true;const bonus=(room.royalDice===6||captured||reachedHome)&&!room.royalPlacements.includes(playerId);room.royalDice=null;room.royalLegal=[];if(bonus){room.deadline=Date.now()+ROYAL_TURN_MS;room.message+=` ${player.name} gets a bonus roll.`;broadcast(room);}else royalNext(room);return true;}
@@ -143,8 +148,8 @@ async function api(req, res, route) {
   if (route === "/api/create" && req.method === "POST") {
     const name = cleanName(body.name); if (!name) return json(res, 400, {error:"Enter your name."});
     const roomCode = code(), playerId = id(), token = id();
-    const player = {id:playerId, token, name, strikes:0, eliminated:false, connected:true, host:true,team:"gold",score:0,royalColor:"gold",royalTimeouts:0,royalKicked:false};
-    const room = {code:roomCode, hostId:playerId, phase:"lobby", game:"wordlink",mode:"ffa",players:[player], turn:0, currentWord:"", used:new Set(), deadline:0, timerSeconds:15, round:0, winnerId:null,winnerTeam:null,surveyQuestions:[],surveyIndex:0,found:new Set(),drawRounds:5,drawTurn:0,drawTotal:0,drawOrder:[],drawerId:null,drawWord:"",strokes:[],guessed:new Set(),lastGuesses:[],royalOrder:[],royalTurn:0,royalDice:null,royalLegal:[],royalTokens:{},royalPlacements:[],royalLastMove:null,royalMoveSeq:0, message:"Room created. Share the code!", createdAt:Date.now()};
+    const player = {id:playerId, token, name, strikes:0, eliminated:false, connected:true, host:true,team:"gold",score:0,royalColor:"gold",royalTimeouts:0,royalKicked:false,voiceOn:false,totalXp:0,wins:0,gamesPlayed:0,gameStats:freshStats()};
+    const room = {code:roomCode, hostId:playerId, phase:"lobby", game:"wordlink",mode:"ffa",players:[player], turn:0, currentWord:"", used:new Set(), deadline:0, timerSeconds:15, round:0, winnerId:null,winnerTeam:null,surveyQuestions:[],surveyIndex:0,found:new Set(),drawRounds:5,drawTurn:0,drawTotal:0,drawOrder:[],drawerId:null,drawWord:"",strokes:[],guessed:new Set(),lastGuesses:[],royalOrder:[],royalTurn:0,royalDice:null,royalLegal:[],royalTokens:{},royalPlacements:[],royalLastMove:null,royalMoveSeq:0,chat:[],chatSeq:0,voiceSignals:[],voiceSignalSeq:0,lastResults:[],resultsRecorded:false,message:"Room created. Share the code!", createdAt:Date.now()};
     rooms.set(roomCode, room); return json(res, 200, {code:roomCode, playerId, token});
   }
   if (route === "/api/join" && req.method === "POST") {
@@ -156,7 +161,7 @@ async function api(req, res, route) {
     if (room.players.some(p => p.name.toLowerCase() === name.toLowerCase())) return json(res, 409, {error:"That nickname is already in use."});
     const goldCount=room.players.filter(p=>p.team==="gold").length,blueCount=room.players.filter(p=>p.team==="blue").length;
     const usedColors=room.players.map(p=>p.royalColor),availableColor=ROYAL_COLORS.find(c=>!usedColors.includes(c))||ROYAL_COLORS[room.players.length%4];
-    const player = {id:id(), token:id(), name, strikes:0, eliminated:false, connected:true, host:false,team:goldCount<=blueCount?"gold":"blue",score:0,royalColor:availableColor,royalTimeouts:0,royalKicked:false}; room.players.push(player);
+    const player = {id:id(), token:id(), name, strikes:0, eliminated:false, connected:true, host:false,team:goldCount<=blueCount?"gold":"blue",score:0,royalColor:availableColor,royalTimeouts:0,royalKicked:false,voiceOn:false,totalXp:0,wins:0,gamesPlayed:0,gameStats:freshStats()}; room.players.push(player);
     room.message = `${name} joined the room.`; broadcast(room); return json(res, 200, {code:room.code, playerId:player.id, token:player.token});
   }
   const room = rooms.get(String(body.code || "").toUpperCase());
@@ -179,6 +184,7 @@ async function api(req, res, route) {
   if (route === "/api/start") {
     if (player.id !== room.hostId) return json(res, 403, {error:"Only the host can start."});
     if (room.players.length < 2) return json(res, 409, {error:"At least two players are required."});
+    room.resultsRecorded=false;room.lastResults=[];
     if(room.game==="royal"){
       if(room.players.length>4)return json(res,409,{error:"Royal Race supports a maximum of four players."});if(new Set(room.players.map(p=>p.royalColor)).size!==room.players.length)return json(res,409,{error:"Every player must choose a different colour."});room.players.forEach(p=>{p.score=0;p.royalTimeouts=0;p.royalKicked=false});room.royalOrder=room.players.map(p=>p.id).sort(()=>Math.random()-.5);room.royalTurn=0;room.royalDice=null;room.royalLegal=[];room.royalTokens={};room.players.forEach(p=>room.royalTokens[p.id]=[-1,-1,-1,-1]);room.royalPlacements=[];room.royalLastMove=null;room.royalMoveSeq=0;room.phase="royal";room.deadline=Date.now()+ROYAL_TURN_MS;room.winnerId=null;room.message=`${room.players.find(p=>p.id===room.royalOrder[0])?.name} begins the Royal Race!`;broadcast(room);return json(res,200,{ok:true});
     }
@@ -242,7 +248,7 @@ async function api(req, res, route) {
     if (word.length < 2) { strike(room, player, "enter a word with at least two letters"); return json(res, 200, {ok:false}); }
     if (room.used.has(word)) { strike(room, player, `${word} was already used`); return json(res, 200, {ok:false}); }
     if (word[0] !== room.currentWord.at(-1)) { strike(room, player, `${word} must begin with ${room.currentWord.at(-1)}`); return json(res, 200, {ok:false}); }
-    room.currentWord=word; room.used.add(word); room.round++; room.message=`${player.name} linked ${word}!`; nextTurn(room); return json(res, 200, {ok:true});
+    room.currentWord=word; room.used.add(word);player.score+=100; room.round++; room.message=`${player.name} linked ${word}!`; nextTurn(room); return json(res, 200, {ok:true});
   }
   if (route === "/api/restart") {
     if (player.id !== room.hostId) return json(res, 403, {error:"Only the host can restart."});
@@ -255,6 +261,15 @@ async function api(req, res, route) {
     removePlayer(room,target.id,"was removed by the host");return json(res, 200, {ok:true});
   }
   if(route==="/api/leave"){removePlayer(room,player.id);return json(res,200,{ok:true});}
+  if(route==="/api/chat"){
+    const text=cleanChat(body.text);if(!text)return json(res,400,{error:"Type a message."});room.chat.push({id:++room.chatSeq,playerId:player.id,name:player.name,text,ts:Date.now()});if(room.chat.length>100)room.chat.shift();broadcast(room);return json(res,200,{ok:true});
+  }
+  if(route==="/api/voice-state"){
+    player.voiceOn=Boolean(body.enabled);if(!player.voiceOn)room.voiceSignals=room.voiceSignals.filter(s=>s.from!==player.id&&s.to!==player.id);broadcast(room);return json(res,200,{ok:true});
+  }
+  if(route==="/api/voice-signal"){
+    const target=room.players.find(p=>p.id===body.to);if(!target||target.id===player.id)return json(res,400,{error:"Voice recipient is unavailable."});if(!["offer","answer","ice"].includes(body.type))return json(res,400,{error:"Invalid voice signal."});room.voiceSignals.push({id:++room.voiceSignalSeq,from:player.id,to:target.id,type:body.type,payload:body.payload});if(room.voiceSignals.length>400)room.voiceSignals.splice(0,room.voiceSignals.length-300);broadcast(room);return json(res,200,{ok:true});
+  }
   return json(res, 404, {error:"Unknown action."});
 }
 
@@ -283,4 +298,4 @@ if (require.main === module) {
   server.listen(PORT, "0.0.0.0", () => console.log(`TM's GAME ROOM running on http://localhost:${PORT}`));
 }
 
-module.exports = {cleanName, cleanWord, cleanPhrase, similar, server, __test:{royalMove,royalTimeout,removePlayer,smoothStrokePoints}};
+module.exports = {cleanName, cleanWord, cleanPhrase, similar, server, __test:{royalMove,royalTimeout,removePlayer,smoothStrokePoints,cleanChat,leaderboard,recordResults,freshStats}};

@@ -2,6 +2,8 @@
 
 A responsive multiplayer browser game. The host and players can all use phones; nobody installs an app. The same room now includes **Word Link**, **Survey Showdown**, **Draw & Guess**, and **TM’s Royal Race**.
 
+Every room includes an optional text-chat drawer, opt-in peer-to-peer WebRTC voice chat with microphone mute/off controls, and a Champions Board. The leaderboard compiles normalized XP, wins, games played and levels across all games in the current room, with separate per-game filters. Microphones are off by default and require browser permission.
+
 ## Run locally
 
 ```bash

@@ -30,5 +30,13 @@
       <button id="start" class="gold hidden">START GAME</button><button id="next-survey" class="gold hidden">NEXT SURVEY</button><button id="next-draw" class="gold hidden">NEXT DRAWING</button><button id="restart" class="gold hidden">PLAY AGAIN</button><button id="leave" class="ghost">LEAVE ROOM</button><p id="room-error" class="error"></p>
     </section>
   </main>
+  <div id="comms-dock" class="comms-dock hidden" aria-label="Room communication">
+    <button id="chat-toggle" class="dock-button" aria-label="Open room chat">💬<span id="chat-badge" class="dock-badge hidden">0</span></button>
+    <button id="mic-toggle" class="dock-button mic-off" aria-label="Turn microphone on">🎙️<small>OFF</small></button>
+    <button id="leaderboard-toggle" class="dock-button" aria-label="Open Champions Board">🏆</button>
+  </div>
+  <aside id="chat-panel" class="side-panel hidden" aria-label="Room chat"><div class="side-head"><div><small>TM’s GAME ROOM</small><b>ROOM CHAT</b></div><button id="chat-close" aria-label="Close chat">×</button></div><div id="chat-messages" class="chat-messages"></div><form id="chat-form"><input id="chat-input" maxlength="180" autocomplete="off" placeholder="TYPE A MESSAGE"><button>➤</button></form></aside>
+  <div id="leaderboard-modal" class="modal-backdrop hidden"><section class="champions-board"><div class="side-head"><div><small>TM’s GAME ROOM</small><b>CHAMPIONS BOARD</b></div><button id="leaderboard-close" aria-label="Close leaderboard">×</button></div><div id="leaderboard-tabs" class="leaderboard-tabs"><button data-board="all" class="selected">ALL</button><button data-board="wordlink">WORD LINK</button><button data-board="survey">SURVEY</button><button data-board="draw">DRAW</button><button data-board="royal">ROYAL</button></div><div id="leaderboard-podium" class="leaderboard-podium"></div><div id="leaderboard-list" class="leaderboard-list"></div><p class="board-note">Rankings are compiled from games completed in this room.</p></section></div>
+  <div id="voice-audio" class="hidden" aria-hidden="true"></div>
   <script src="/app.js"></script>
 </body></html>
