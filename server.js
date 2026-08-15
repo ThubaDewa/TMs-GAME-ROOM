@@ -40,6 +40,7 @@ function similar(a,b){
   for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
   return 1-d[a.length][b.length]/Math.max(a.length,b.length)>=.78;
 }
+function smoothStrokePoints(points){if(points.length<3)return points;const result=[points[0]];for(let i=1;i<points.length-1;i++){const a=points[i-1],b=points[i],c=points[i+1];result.push([a[0]*.18+b[0]*.64+c[0]*.18,a[1]*.18+b[1]*.64+c[1]*.18])}result.push(points.at(-1));return result}
 const publicRoom = (room,viewerId) => ({
   code: room.code, phase: room.phase, hostId: room.hostId, game:room.game, mode:room.mode, drawRounds:room.drawRounds, currentWord: room.currentWord,
   currentPlayerId: room.players[room.turn]?.id || null, deadline: room.deadline,
@@ -203,7 +204,7 @@ async function api(req, res, route) {
   if(route==="/api/draw-stroke"){
     if(room.phase!=="draw"||player.id!==room.drawerId)return json(res,403,{error:"Only the current drawer can draw."});
     const color=/^#[0-9a-f]{6}$/i.test(body.color)?body.color:"#14213d",size=Math.max(2,Math.min(30,Number(body.size)||6));
-    const points=Array.isArray(body.points)?body.points.slice(0,30).map(p=>[Math.max(0,Math.min(1,Number(p[0]))),Math.max(0,Math.min(1,Number(p[1])))]):[];
+    const rawPoints=Array.isArray(body.points)?body.points.slice(0,30).map(p=>[Math.max(0,Math.min(1,Number(p[0]))),Math.max(0,Math.min(1,Number(p[1])))]):[],points=smoothStrokePoints(rawPoints);
     if(points.length){room.strokes.push({color,size,points});if(room.strokes.length>2500)room.strokes.shift();broadcast(room);}return json(res,200,{ok:true});
   }
   if(route==="/api/clear-drawing"){
@@ -282,4 +283,4 @@ if (require.main === module) {
   server.listen(PORT, "0.0.0.0", () => console.log(`TM's GAME ROOM running on http://localhost:${PORT}`));
 }
 
-module.exports = {cleanName, cleanWord, cleanPhrase, similar, server, __test:{royalMove,royalTimeout,removePlayer}};
+module.exports = {cleanName, cleanWord, cleanPhrase, similar, server, __test:{royalMove,royalTimeout,removePlayer,smoothStrokePoints}};
