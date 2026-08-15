@@ -18,3 +18,10 @@ test("records captured Royal Race tokens for the return animation", () => {
 	assert.equal(room.royalTokens.b[0],-1);
 	assert.deepEqual(room.royalLastMove.capturedTokens,[{playerId:"b",tokenIndex:0,fromProgress:40,toProgress:-1}]);
 });
+function leaveRoom(phase="lobby"){
+	const players=[{id:"a",name:"A",host:true,score:0,eliminated:false,royalKicked:false},{id:"b",name:"B",host:false,score:0,eliminated:false,royalKicked:false},{id:"c",name:"C",host:false,score:0,eliminated:false,royalKicked:false}];
+	return {code:"TEST",phase,hostId:"a",players,turn:0,timerSeconds:15,deadline:1,winnerId:null,guessed:new Set(),drawOrder:["a","b","c"],drawTurn:2,drawTotal:3,drawerId:"b",drawWord:"crown",strokes:[],lastGuesses:[],royalOrder:["a","b","c"],royalTurn:1,royalDice:null,royalLegal:[],royalTokens:{a:[-1,-1,-1,-1],b:[-1,-1,-1,-1],c:[-1,-1,-1,-1]},royalPlacements:[]};
+}
+test("leaving the lobby removes the player and transfers host",()=>{const room=leaveRoom();assert.equal(__test.removePlayer(room,"a"),true);assert.deepEqual(room.players.map(p=>p.id),["b","c"]);assert.equal(room.hostId,"b");assert.equal(room.players[0].host,true)});
+test("a departing Draw & Guess artist is removed and the next artist starts",()=>{const room=leaveRoom("draw");__test.removePlayer(room,"b");assert.deepEqual(room.players.map(p=>p.id),["a","c"]);assert.equal(room.drawerId,"c");assert.equal(room.drawTurn,2)});
+test("a departing Royal Race player is removed without skipping the next turn",()=>{const room=leaveRoom("royal");__test.removePlayer(room,"b");assert.deepEqual(room.royalOrder,["a","c"]);assert.equal(room.royalOrder[room.royalTurn],"c");assert.equal(room.royalTokens.b,undefined)});

@@ -33,6 +33,8 @@ Validate the full survey pack with `node tools/validate_surveys.js`.
 
 ## Draw & Guess
 
+Phone and mouse drawing uses coalesced pointer input and incremental network rendering for smooth curves without full-canvas flicker. Leaving the room removes that player from the active game; if the current artist leaves, the next eligible artist starts automatically.
+
 The host selects 5 or 10 total drawing turns. If there are more players than selected turns, the game automatically increases the total so every player draws at least once before anyone repeats. Each turn lasts 60 seconds. Only the drawer receives the secret word; other authenticated players receive a masked word and the synchronized canvas.
 
 The canvas uses a fixed 1200×675 backing surface and normalized pointer coordinates for accurate mouse, stylus, and multi-direction finger drawing at any responsive display size. Correct guesses earn 100 base points plus up to 400 time points. The first correct guess earns another 100 points, and the drawer receives 50 points for every correct guesser.

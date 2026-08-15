@@ -91,6 +91,30 @@ function makeDrawOrder(players,total){const order=[];while(order.length<total){c
 function startDrawTurn(room){room.phase="draw";room.drawerId=room.drawOrder[room.drawTurn-1];room.drawWord=DRAW_WORDS[crypto.randomInt(DRAW_WORDS.length)];room.strokes=[];room.guessed=new Set();room.lastGuesses=[];room.deadline=Date.now()+60000;room.message=`${room.players.find(p=>p.id===room.drawerId)?.name} is drawing!`;broadcast(room);}
 function finishDrawTurn(room){if(room.phase!=="draw")return;room.deadline=0;room.phase="draw-break";room.message=`Time! The word was ${room.drawWord.toUpperCase()}.`;broadcast(room);}
 function nextDrawTurn(room){if(room.drawTurn>=room.drawTotal){room.phase="finished";room.deadline=0;room.winnerId=[...room.players].sort((a,b)=>b.score-a.score)[0]?.id||null;room.message="Draw & Guess champion crowned!";broadcast(room);return;}room.drawTurn++;startDrawTurn(room);}
+function removePlayer(room,targetId,reason="left the room"){
+	const targetIndex=room.players.findIndex(p=>p.id===targetId);if(targetIndex<0)return false;
+	const target=room.players[targetIndex],wasHost=target.id===room.hostId,wasWordTurn=room.phase==="playing"&&room.players[room.turn]?.id===target.id;
+	const wasDrawer=["draw","draw-break"].includes(room.phase)&&room.drawerId===target.id,oldDrawOrder=[...room.drawOrder],oldDrawTurn=room.drawTurn;
+	const oldRoyalIndex=room.royalOrder.indexOf(target.id),wasRoyalTurn=room.phase==="royal"&&room.royalOrder[room.royalTurn]===target.id;
+	room.players.splice(targetIndex,1);room.guessed?.delete(target.id);room.drawOrder=room.drawOrder.filter(id=>id!==target.id);room.royalOrder=room.royalOrder.filter(id=>id!==target.id);room.royalPlacements=room.royalPlacements.filter(id=>id!==target.id);delete room.royalTokens[target.id];
+	for(const client of clients.get(room.code)||[]){if(client.playerId===target.id){client.res.end();clients.get(room.code)?.delete(client)}}
+	if(!room.players.length){rooms.delete(room.code);clients.delete(room.code);return true}
+	if(wasHost){room.hostId=room.players[0].id;room.players.forEach(p=>p.host=p.id===room.hostId)}
+	room.message=`${target.name} ${reason} and was removed from the game.${wasHost?` ${room.players[0].name} is now host.`:""}`;
+	if(room.phase==="lobby"){broadcast(room);return true}
+	if(room.players.length===1){room.phase="finished";room.deadline=0;room.winnerId=room.players[0].id;room.message+=` ${room.players[0].name} is the remaining player.`;broadcast(room);return true}
+	if(room.phase==="playing"){
+		if(targetIndex<room.turn)room.turn--;if(wasWordTurn){room.turn=Math.min(targetIndex,room.players.length-1);let tries=0;while(room.players[room.turn].eliminated&&tries++<room.players.length)room.turn=(room.turn+1)%room.players.length;room.deadline=Date.now()+room.timerSeconds*1000}broadcast(room);return true
+	}
+	if(["draw","draw-break"].includes(room.phase)){
+		const completedRemaining=oldDrawOrder.slice(0,Math.max(0,oldDrawTurn-1)).filter(id=>id!==target.id).length;room.drawTotal=room.drawOrder.length;
+		if(wasDrawer&&room.phase==="draw"){room.drawTurn=completedRemaining;room.message+=` Moving to the next artist.`;nextDrawTurn(room)}else{room.drawTurn=Math.min(completedRemaining+1,room.drawTotal);if(room.phase==="draw"&&room.guessed.size>=room.players.length-1)finishDrawTurn(room);else broadcast(room)}return true
+	}
+	if(room.phase==="royal"){
+		if(oldRoyalIndex>=0&&oldRoyalIndex<room.royalTurn)room.royalTurn--;if(wasRoyalTurn){room.royalTurn=Math.min(oldRoyalIndex,room.royalOrder.length-1);room.royalDice=null;room.royalLegal=[];room.deadline=Date.now()+ROYAL_TURN_MS;room.message+=` ${room.players.find(p=>p.id===room.royalOrder[room.royalTurn])?.name}'s turn.`}if(!royalMaybeFinish(room))broadcast(room);return true
+	}
+	broadcast(room);return true
+}
 function royalTrack(color,progress){return progress>=0&&progress<52?(ROYAL_OFFSETS[color]+progress)%52:null;}
 function royalLegal(room,playerId,dice){const tokens=room.royalTokens[playerId]||[];return tokens.map((p,i)=>({p,i})).filter(x=>x.p<58&&((x.p===-1&&dice===6)||(x.p>=0&&x.p+dice<=58))).map(x=>x.i);}
 function royalMaybeFinish(room){const active=room.royalOrder.filter(id=>{const p=room.players.find(x=>x.id===id);return p&&!p.royalKicked&&!room.royalPlacements.includes(id)});if(active.length>1)return false;if(active.length===1)room.royalPlacements.push(active[0]);room.phase="finished";room.deadline=0;room.winnerId=room.royalPlacements[0]||null;room.message="The Royal Race is complete!";broadcast(room);return true;}
@@ -227,8 +251,9 @@ async function api(req, res, route) {
     if (player.id !== room.hostId) return json(res, 403, {error:"Only the host can remove players."});
     const target = room.players.find(p => p.id === body.targetId);
     if (!target || target.host) return json(res, 400, {error:"Player cannot be removed."});
-    room.players = room.players.filter(p => p.id !== target.id); room.message=`${target.name} was removed.`; broadcast(room); return json(res, 200, {ok:true});
+    removePlayer(room,target.id,"was removed by the host");return json(res, 200, {ok:true});
   }
+  if(route==="/api/leave"){removePlayer(room,player.id);return json(res,200,{ok:true});}
   return json(res, 404, {error:"Unknown action."});
 }
 
@@ -257,4 +282,4 @@ if (require.main === module) {
   server.listen(PORT, "0.0.0.0", () => console.log(`TM's GAME ROOM running on http://localhost:${PORT}`));
 }
 
-module.exports = {cleanName, cleanWord, cleanPhrase, similar, server, __test:{royalMove,royalTimeout}};
+module.exports = {cleanName, cleanWord, cleanPhrase, similar, server, __test:{royalMove,royalTimeout,removePlayer}};
