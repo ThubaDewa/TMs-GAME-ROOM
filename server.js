@@ -11,6 +11,7 @@ const DEAL_AMOUNTS=[1,5,10,20,50,100,200,300,500,750,1000,2000,3000,5000,7500,10
 const PORT = Number(process.env.PORT || 3000);
 const ROYAL_TURN_MS = Number(process.env.ROYAL_TURN_MS || 30000);
 const ROYAL_HOME = 52;
+const ROUND_REVEAL_MS = Number(process.env.ROUND_REVEAL_MS || 5000);
 const PUBLIC = path.join(__dirname, "public");
 const rooms = new Map();
 const clients = new Map();
@@ -96,14 +97,14 @@ function finishSurveyQuestion(room){
     }else{
       const sorted=[...room.players].sort((a,b)=>b.score-a.score);room.winnerId=sorted[0]?.id||null;room.message="Survey Showdown champion crowned!";
     }
-  }else{room.phase="survey-break";room.message=`Question ${room.surveyIndex+1} complete. Host, reveal the next survey!`;}
+  }else{room.phase="survey-break";room.deadline=Date.now()+ROUND_REVEAL_MS;room.message=`Question ${room.surveyIndex+1} complete. Next survey starts automatically…`;}
   if(room.phase==="finished")recordResults(room);broadcast(room);
 }
 function startNextSurvey(room){room.surveyIndex++;room.found=new Set();room.round=room.surveyIndex+1;room.phase="survey";room.deadline=Date.now()+30000;room.message="New survey—go!";broadcast(room);}
 function chooseSurveys(count){const shuffled=[...SURVEYS].sort(()=>Math.random()-.5),chosen=[],groups=new Set();for(const q of shuffled){if(groups.has(q.group))continue;groups.add(q.group);chosen.push(q);if(chosen.length===count)break;}return chosen;}
 function makeDrawOrder(players,total){const order=[];while(order.length<total){const cycle=players.map(p=>p.id).sort(()=>Math.random()-.5);for(const id of cycle){if(order.length<total)order.push(id);}}return order;}
 function startDrawTurn(room){room.phase="draw";room.drawerId=room.drawOrder[room.drawTurn-1];room.drawWord=DRAW_WORDS[crypto.randomInt(DRAW_WORDS.length)];room.strokes=[];room.guessed=new Set();room.lastGuesses=[];room.deadline=Date.now()+60000;room.message=`${room.players.find(p=>p.id===room.drawerId)?.name} is drawing!`;broadcast(room);}
-function finishDrawTurn(room){if(room.phase!=="draw")return;room.deadline=0;room.phase="draw-break";room.message=`Time! The word was ${room.drawWord.toUpperCase()}.`;broadcast(room);}
+function finishDrawTurn(room){if(room.phase!=="draw")return;room.phase="draw-break";room.deadline=Date.now()+ROUND_REVEAL_MS;room.message=`Time! The word was ${room.drawWord.toUpperCase()}. Next artist starts automatically…`;broadcast(room);}
 function nextDrawTurn(room){if(room.drawTurn>=room.drawTotal){room.phase="finished";room.deadline=0;room.winnerId=[...room.players].sort((a,b)=>b.score-a.score)[0]?.id||null;room.message="Draw & Guess champion crowned!";recordResults(room);broadcast(room);return;}room.drawTurn++;startDrawTurn(room);}
 function removePlayer(room,targetId,reason="left the room"){
 	room.dealOrder||=[];room.dealCases||=[];room.dealPersonal||={};room.dealOffers||={};room.dealChoices||={};
@@ -197,6 +198,10 @@ const timerSweep = setInterval(() => {
       finishSurveyQuestion(room);
     } else if (room.phase === "draw" && room.deadline && now >= room.deadline) {
       finishDrawTurn(room);
+    } else if (room.phase === "survey-break" && room.deadline && now >= room.deadline) {
+      startNextSurvey(room);
+    } else if (room.phase === "draw-break" && room.deadline && now >= room.deadline) {
+      nextDrawTurn(room);
     } else if (room.phase === "royal" && room.deadline && now >= room.deadline) {
       royalTimeout(room);
     } else if (["deal-pick","deal-open","deal-bank"].includes(room.phase) && room.deadline && now >= room.deadline) {
@@ -370,4 +375,4 @@ if (require.main === module) {
   server.listen(PORT, "0.0.0.0", () => console.log(`TM's GAME ROOM running on http://localhost:${PORT}`));
 }
 
-module.exports = {cleanName, cleanWord, cleanPhrase, similar, server, __test:{royalLegal,royalMove,royalTimeout,removePlayer,smoothStrokePoints,cleanChat,addChatMessage,leaderboard,recordResults,freshStats,selectDealCase,openDealCase,finishDealGame,calculateDealOffer}};
+module.exports = {cleanName, cleanWord, cleanPhrase, similar, server, __test:{royalLegal,royalMove,royalTimeout,removePlayer,smoothStrokePoints,cleanChat,addChatMessage,finishSurveyQuestion,startNextSurvey,finishDrawTurn,nextDrawTurn,leaderboard,recordResults,freshStats,selectDealCase,openDealCase,finishDealGame,calculateDealOffer}};
