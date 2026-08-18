@@ -12,6 +12,7 @@ const PORT = Number(process.env.PORT || 3000);
 const ROYAL_TURN_MS = Number(process.env.ROYAL_TURN_MS || 30000);
 const ROYAL_HOME = 52;
 const ROUND_REVEAL_MS = Number(process.env.ROUND_REVEAL_MS || 5000);
+const SURVEY_ROUND_MS = Number(process.env.SURVEY_ROUND_MS || 60000);
 const PUBLIC = path.join(__dirname, "public");
 const rooms = new Map();
 const clients = new Map();
@@ -40,6 +41,7 @@ const code = () => {
 const id = () => crypto.randomBytes(12).toString("hex");
 const cleanName = value => String(value || "").replace(/[<>]/g, "").trim().slice(0, 20);
 const cleanWord = value => String(value || "").trim().toUpperCase().replace(/[^A-Z]/g, "").slice(0, 24);
+const validWordLength = value => cleanWord(value).length >= 4;
 const cleanPhrase = value => String(value || "").toLowerCase().replace(/[^a-z0-9 ]/g,"").replace(/\s+/g," ").trim();
 const cleanChat = value => String(value||"").replace(/<[^>]*>/g,"").replace(/[<>]/g,"").replace(/\s+/g," ").trim().slice(0,180);
 function addChatMessage(room,player,textValue,clientIdValue=""){const text=cleanChat(textValue),clientMessageId=String(clientIdValue||"").slice(0,80);if(!text)return null;const existing=clientMessageId&&room.chat.find(m=>m.playerId===player.id&&m.clientMessageId===clientMessageId);if(existing)return existing;const message={id:++room.chatSeq,clientMessageId,playerId:player.id,name:player.name,text,ts:Date.now()};room.chat.push(message);if(room.chat.length>100)room.chat.shift();return message}
@@ -51,23 +53,25 @@ function similar(a,b){
   return 1-d[a.length][b.length]/Math.max(a.length,b.length)>=.78;
 }
 function smoothStrokePoints(points){if(points.length<3)return points;const result=[points[0]];for(let i=1;i<points.length-1;i++){const a=points[i-1],b=points[i],c=points[i+1];result.push([a[0]*.18+b[0]*.64+c[0]*.18,a[1]*.18+b[1]*.64+c[1]*.18])}result.push(points.at(-1));return result}
+function calculateDrawScore(remainingMs,isFirst=false){const speed=Math.max(0,Math.min(4,Math.ceil(4*remainingMs/60000)));return 5+speed+(isFirst?1:0)}
 function leaderboard(room,game="all"){return room.players.map(p=>{const stat=game==="all"?null:p.gameStats?.[game];return {id:p.id,name:p.name,xp:stat?.xp??p.totalXp??0,wins:stat?.wins??p.wins??0,games:stat?.games??p.gamesPlayed??0,level:Math.max(1,Math.floor((stat?.xp??p.totalXp??0)/1000)+1)}}).sort((a,b)=>b.xp-a.xp||b.wins-a.wins||a.name.localeCompare(b.name))}
 function recordResults(room){if(room.resultsRecorded||room.phase!=="finished")return;let order=room.game==="royal"?[...room.royalPlacements]:[...room.players].sort((a,b)=>b.score-a.score).map(p=>p.id);if(room.winnerId)order=[room.winnerId,...order.filter(id=>id!==room.winnerId)];for(const p of room.players)if(!order.includes(p.id))order.push(p.id);const awards=[600,400,300,220,170,130,100,80],results=[];order.forEach((id,rank)=>{const p=room.players.find(x=>x.id===id);if(!p)return;const teamWin=room.game==="survey"&&room.mode==="teams"&&room.winnerTeam===p.team,isWinner=id===room.winnerId||teamWin,performance=room.game==="wordlink"?Math.min(400,p.score):room.game==="deal"?Math.min(400,Math.round(Math.sqrt(Math.max(0,p.score))*1.2)):Math.min(400,Math.round(p.score*.35)),xp=(awards[rank]||60)+performance+(isWinner?100:0);p.totalXp=(p.totalXp||0)+xp;p.gamesPlayed=(p.gamesPlayed||0)+1;if(isWinner)p.wins=(p.wins||0)+1;const stat=p.gameStats[room.game]||(p.gameStats[room.game]={games:0,wins:0,xp:0});stat.games++;stat.xp+=xp;if(isWinner)stat.wins++;results.push({playerId:id,rank:rank+1,xp,score:p.score})});room.lastResults=results;room.resultsRecorded=true}
 const publicRoom = (room,viewerId) => ({
-  code: room.code, phase: room.phase, hostId: room.hostId, game:room.game, mode:room.mode, drawRounds:room.drawRounds, currentWord: room.currentWord,
+  code: room.code, phase: room.phase, hostId: room.hostId, game:room.game, mode:room.mode, drawRounds:room.drawRounds, currentWord: room.currentWord, timerSeconds:room.timerSeconds,
   currentPlayerId: room.players[room.turn]?.id || null, deadline: room.deadline,
   round: room.round, winnerId: room.winnerId, winnerTeam:room.winnerTeam, message: room.message,
   survey: ["survey","survey-break"].includes(room.phase) ? {question:room.surveyQuestions[room.surveyIndex].question,index:room.surveyIndex+1,total:room.surveyQuestions.length,answers:room.surveyQuestions[room.surveyIndex].answers.map((a,i)=>room.found.has(i)||room.phase==="survey-break"?{text:a.text,points:a.points}:{text:"",points:0}),found:room.found.size} : null,
   draw: ["draw","draw-break"].includes(room.phase) ? {turn:room.drawTurn,total:room.drawTotal,drawerId:room.drawerId,isDrawer:viewerId===room.drawerId,word:viewerId===room.drawerId||room.phase==="draw-break"?room.drawWord:"_ ".repeat(room.drawWord.length).trim(),wordLength:room.drawWord.length,strokes:room.strokes,guessed:[...room.guessed],lastGuesses:room.lastGuesses.slice(-8)} : null,
   royal: room.phase === "royal" ? {turnPlayerId:room.royalOrder[room.royalTurn]||null,dice:room.royalDice,legal:room.royalOrder[room.royalTurn]===viewerId?room.royalLegal:[],tokens:room.royalTokens,placements:room.royalPlacements,lastMove:room.royalLastMove} : null,
   deal:room.game==="deal"&&room.dealCases.length?{round:room.dealRound,turnPlayerId:room.dealOrder[room.dealTurn]||null,openRemaining:room.dealOpenRemaining,bankerStage:room.dealBankerStage,offer:room.dealBankerStage==="offer"?(room.dealOffers[viewerId]||null):null,choice:room.dealChoices[viewerId]||null,finalBank:room.dealFinalBank,cases:room.dealCases.map(c=>({number:c.number,opened:c.opened,value:c.opened||room.phase==="finished"?c.value:null,ownerId:c.ownerId})),players:room.players.map(p=>({playerId:p.id,caseNumber:room.dealPersonal[p.id]||null,status:p.dealStatus||"playing",payout:p.dealPayout||0,finalValue:room.phase==="finished"?(room.dealCases.find(c=>c.ownerId===p.id)?.value||0):null}))}:null,
-  chat:(room.chat||[]).slice(-60),voiceSignals:(room.voiceSignals||[]).filter(s=>s.to===viewerId).slice(-80),rtcIceServers:RTC_ICE_SERVERS,leaderboards:{all:leaderboard(room),wordlink:leaderboard(room,"wordlink"),survey:leaderboard(room,"survey"),draw:leaderboard(room,"draw"),royal:leaderboard(room,"royal"),deal:leaderboard(room,"deal")},lastResults:room.lastResults||[],
+  chat:(room.chat||[]).slice(-60),voiceSignals:(room.voiceSignals||[]).filter(s=>s.to===viewerId&&s.id>(room.players.find(p=>p.id===viewerId)?.voiceSignalAck||0)).slice(-80),rtcIceServers:RTC_ICE_SERVERS,leaderboards:{all:leaderboard(room),wordlink:leaderboard(room,"wordlink"),survey:leaderboard(room,"survey"),draw:leaderboard(room,"draw"),royal:leaderboard(room,"royal"),deal:leaderboard(room,"deal")},lastResults:room.lastResults||[],
   players: room.players.map(({token, ...p}) => p)
 });
 function broadcast(room) {
   for (const client of clients.get(room.code) || []) client.res.write(`data: ${JSON.stringify(publicRoom(room,client.playerId))}\n\n`);
 }
 function active(room) { return room.players.filter(p => !p.eliminated); }
+function wordTurnSeconds(room){const remaining=active(room).length;return remaining<=2?7:remaining===3?10:15}
 function nextTurn(room) {
   if (active(room).length <= 1) {
     room.phase = "finished"; room.winnerId = active(room)[0]?.id || null; room.deadline = 0;
@@ -77,7 +81,7 @@ function nextTurn(room) {
   let tries = 0;
   do { room.turn = (room.turn + 1) % room.players.length; tries++; }
   while (room.players[room.turn].eliminated && tries <= room.players.length);
-  room.deadline = Date.now() + room.timerSeconds * 1000;
+  room.timerSeconds=wordTurnSeconds(room);room.deadline = Date.now() + room.timerSeconds * 1000;
   if(room.phase==="finished")recordResults(room);broadcast(room);
 }
 function strike(room, player, reason) {
@@ -100,7 +104,7 @@ function finishSurveyQuestion(room){
   }else{room.phase="survey-break";room.deadline=Date.now()+ROUND_REVEAL_MS;room.message=`Question ${room.surveyIndex+1} complete. Next survey starts automatically…`;}
   if(room.phase==="finished")recordResults(room);broadcast(room);
 }
-function startNextSurvey(room){room.surveyIndex++;room.found=new Set();room.round=room.surveyIndex+1;room.phase="survey";room.deadline=Date.now()+30000;room.message="New survey—go!";broadcast(room);}
+function startNextSurvey(room){room.surveyIndex++;room.found=new Set();room.round=room.surveyIndex+1;room.phase="survey";room.deadline=Date.now()+SURVEY_ROUND_MS;room.message="New 60-second survey—go!";broadcast(room);}
 function chooseSurveys(count){const shuffled=[...SURVEYS].sort(()=>Math.random()-.5),chosen=[],groups=new Set();for(const q of shuffled){if(groups.has(q.group))continue;groups.add(q.group);chosen.push(q);if(chosen.length===count)break;}return chosen;}
 function makeDrawOrder(players,total){const order=[];while(order.length<total){const cycle=players.map(p=>p.id).sort(()=>Math.random()-.5);for(const id of cycle){if(order.length<total)order.push(id);}}return order;}
 function startDrawTurn(room){room.phase="draw";room.drawerId=room.drawOrder[room.drawTurn-1];room.drawWord=DRAW_WORDS[crypto.randomInt(DRAW_WORDS.length)];room.strokes=[];room.guessed=new Set();room.lastGuesses=[];room.deadline=Date.now()+60000;room.message=`${room.players.find(p=>p.id===room.drawerId)?.name} is drawing!`;broadcast(room);}
@@ -121,10 +125,10 @@ function removePlayer(room,targetId,reason="left the room"){
 	if(room.phase==="lobby"){broadcast(room);return true}
 	if(room.players.length===1){room.phase="finished";room.deadline=0;room.winnerId=room.players[0].id;room.message+=` ${room.players[0].name} is the remaining player.`;recordResults(room);broadcast(room);return true}
 	if(["deal-pick","deal-open","deal-bank"].includes(room.phase)){
-		if(oldDealIndex>=0&&oldDealIndex<room.dealTurn)room.dealTurn--;if(wasDealTurn)room.dealTurn=Math.min(oldDealIndex,room.dealOrder.length-1);if(room.phase==="deal-pick"){if(room.players.every(p=>room.dealPersonal[p.id])){room.dealRound=1;room.dealTurnsInCycle=0;startDealOpenTurn(room,false)}else{room.deadline=Date.now()+30000;broadcast(room)}}else if(room.phase==="deal-open"){room.dealOpenRemaining=Math.min(2,dealClosedUnowned(room).length);room.deadline=Date.now()+30000;broadcast(room)}else{broadcast(room);resolveDealBanker(room)}return true
+		if(oldDealIndex>=0&&oldDealIndex<room.dealTurn)room.dealTurn--;if(wasDealTurn)room.dealTurn=Math.min(oldDealIndex,room.dealOrder.length-1);if(room.phase==="deal-pick"){if(room.players.every(p=>room.dealPersonal[p.id])){room.dealRound=1;room.dealTurnsInCycle=0;startDealOpenTurn(room,false)}else{room.deadline=Date.now()+30000;broadcast(room)}}else if(room.phase==="deal-open"){room.dealOpenRemaining=Math.min(1,dealClosedUnowned(room).length);room.deadline=Date.now()+30000;broadcast(room)}else{broadcast(room);resolveDealBanker(room)}return true
 	}
 	if(room.phase==="playing"){
-		if(targetIndex<room.turn)room.turn--;if(wasWordTurn){room.turn=Math.min(targetIndex,room.players.length-1);let tries=0;while(room.players[room.turn].eliminated&&tries++<room.players.length)room.turn=(room.turn+1)%room.players.length;room.deadline=Date.now()+room.timerSeconds*1000}broadcast(room);return true
+		if(targetIndex<room.turn)room.turn--;room.timerSeconds=wordTurnSeconds(room);if(wasWordTurn){room.turn=Math.min(targetIndex,room.players.length-1);let tries=0;while(room.players[room.turn].eliminated&&tries++<room.players.length)room.turn=(room.turn+1)%room.players.length;room.deadline=Date.now()+room.timerSeconds*1000}broadcast(room);return true
 	}
 	if(["draw","draw-break"].includes(room.phase)){
 		const completedRemaining=oldDrawOrder.slice(0,Math.max(0,oldDrawTurn-1)).filter(id=>id!==target.id).length;room.drawTotal=room.drawOrder.length;
@@ -140,7 +144,6 @@ function royalLegal(room,playerId,dice){const tokens=room.royalTokens[playerId]|
 function royalMaybeFinish(room){const active=room.royalOrder.filter(id=>{const p=room.players.find(x=>x.id===id);return p&&!p.royalKicked&&!room.royalPlacements.includes(id)});if(active.length>1)return false;if(active.length===1)room.royalPlacements.push(active[0]);room.phase="finished";room.deadline=0;room.winnerId=room.royalPlacements[0]||null;room.message="The Royal Race is complete!";recordResults(room);broadcast(room);return true;}
 function royalNext(room){if(royalMaybeFinish(room))return;let tries=0;do{room.royalTurn=(room.royalTurn+1)%room.royalOrder.length;tries++;const p=room.players.find(x=>x.id===room.royalOrder[room.royalTurn]);if(p&&!p.royalKicked&&!room.royalPlacements.includes(p.id))break;}while(tries<=room.royalOrder.length);room.royalDice=null;room.royalLegal=[];room.deadline=Date.now()+ROYAL_TURN_MS;room.message=`${room.players.find(p=>p.id===room.royalOrder[room.royalTurn])?.name}'s turn.`;broadcast(room);}
 function royalTimeout(room){const id=room.royalOrder[room.royalTurn],player=room.players.find(p=>p.id===id);if(!player)return royalNext(room);player.royalTimeouts=(player.royalTimeouts||0)+1;room.royalDice=null;room.royalLegal=[];if(player.royalTimeouts>=3){player.royalKicked=true;room.royalTokens[player.id]=[];room.message=`${player.name} missed three timers and was removed from the race.`;}else room.message=`${player.name} ran out of time — timer strike ${player.royalTimeouts}/3.`;broadcast(room);if(!royalMaybeFinish(room))royalNext(room);}
-function royalMove(room,playerId,tokenIndex){if(!room.royalLegal.includes(tokenIndex))return false;const player=room.players.find(p=>p.id===playerId),tokens=room.royalTokens[playerId],old=tokens[tokenIndex];tokens[tokenIndex]=old===-1?0:old+room.royalDice;const reachedHome=old<58&&tokens[tokenIndex]===58;let captured=false;const capturedTokens=[],landed=royalTrack(player.royalColor,tokens[tokenIndex]);if(landed!==null&&!ROYAL_SAFE.has(landed)){for(const opponent of room.players){if(opponent.id===playerId||opponent.royalKicked)continue;room.royalTokens[opponent.id].forEach((p,i)=>{if(royalTrack(opponent.royalColor,p)===landed){capturedTokens.push({playerId:opponent.id,tokenIndex:i,fromProgress:p,toProgress:-1});room.royalTokens[opponent.id][i]=-1;captured=true;}})}}room.royalLastMove={moveId:++room.royalMoveSeq,playerId,tokenIndex,dice:room.royalDice,fromProgress:old,toProgress:tokens[tokenIndex],captured,capturedTokens,reachedHome};room.message=reachedHome?`${player.name} brought a token home!`:captured?`${player.name} captured a token!`:`${player.name} moved token ${tokenIndex+1}.`;if(tokens.every(p=>p===58)&&!room.royalPlacements.includes(playerId))room.royalPlacements.push(playerId);if(royalMaybeFinish(room))return true;const bonus=(room.royalDice===6||captured||reachedHome)&&!room.royalPlacements.includes(playerId);room.royalDice=null;room.royalLegal=[];if(bonus){room.deadline=Date.now()+ROYAL_TURN_MS;room.message+=` ${player.name} gets a bonus roll.`;broadcast(room);}else royalNext(room);return true;}
 // Royal tokens now enter the crown directly after the 52nd track position.
 // This later declaration intentionally replaces the legacy six-square home lane.
 function royalMove(room,playerId,tokenIndex){
@@ -182,7 +185,7 @@ function dealNextActiveIndex(room,from=room.dealTurn){for(let step=1;step<=room.
 function roundBankOffer(value){const step=value>=100000?5000:value>=20000?1000:value>=5000?500:value>=1000?100:value>=100?50:10;return Math.max(1,Math.round(value/step)*step)}
 function calculateDealOffer(room,player){const closed=room.dealCases.filter(c=>!c.opened),average=closed.reduce((sum,c)=>sum+c.value,0)/Math.max(1,closed.length),progress=room.dealCases.filter(c=>c.opened).length/DEAL_AMOUNTS.length,factor=room.dealFinalBank ? .78+progress*.18 : .30+progress*.58,variation=(90+crypto.randomInt(21))/100;return roundBankOffer(average*Math.min(.96,factor)*variation)}
 function finishDealGame(room){for(const p of room.players){const own=room.dealCases.find(c=>c.ownerId===p.id);if((p.dealStatus||"playing")==="playing"){p.dealPayout=own?.value||0;p.dealStatus="case"}p.score=p.dealPayout||0}room.phase="finished";room.deadline=0;room.dealBankerStage="reveal";room.winnerId=[...room.players].sort((a,b)=>b.score-a.score)[0]?.id||null;room.message=`All personal cases are revealed! ${room.players.find(p=>p.id===room.winnerId)?.name||"The winner"} has the highest payout.`;recordResults(room);broadcast(room)}
-function startDealOpenTurn(room,advance=false){const active=dealActive(room);if(!active.length||!dealClosedUnowned(room).length){startDealBanker(room,true);return}if(advance){const next=dealNextActiveIndex(room);if(next>=0)room.dealTurn=next}const current=room.players.find(p=>p.id===room.dealOrder[room.dealTurn]);if(!current||(current.dealStatus||"playing")!=="playing"){const next=dealNextActiveIndex(room,room.dealTurn-1);if(next<0)return finishDealGame(room);room.dealTurn=next}room.phase="deal-open";room.dealOpenRemaining=Math.min(2,dealClosedUnowned(room).length);room.dealBankerStage="idle";room.deadline=Date.now()+30000;room.message=`${room.players.find(p=>p.id===room.dealOrder[room.dealTurn])?.name} must open ${room.dealOpenRemaining} case${room.dealOpenRemaining===1?"":"s"}.`;broadcast(room)}
+function startDealOpenTurn(room,advance=false){const active=dealActive(room);if(!active.length||!dealClosedUnowned(room).length){startDealBanker(room,true);return}if(advance){const next=dealNextActiveIndex(room);if(next>=0)room.dealTurn=next}const current=room.players.find(p=>p.id===room.dealOrder[room.dealTurn]);if(!current||(current.dealStatus||"playing")!=="playing"){const next=dealNextActiveIndex(room,room.dealTurn-1);if(next<0)return finishDealGame(room);room.dealTurn=next}room.phase="deal-open";room.dealOpenRemaining=Math.min(1,dealClosedUnowned(room).length);room.dealBankerStage="idle";room.deadline=Date.now()+30000;room.message=`${room.players.find(p=>p.id===room.dealOrder[room.dealTurn])?.name} must open one case.`;broadcast(room)}
 function resolveDealBanker(room){if(room.phase!=="deal-bank"||room.dealBankerStage!=="offer")return;const active=dealActive(room);if(active.some(p=>!room.dealChoices[p.id]))return;room.deadline=0;if(!dealActive(room).length||room.dealFinalBank||!dealClosedUnowned(room).length)return finishDealGame(room);room.dealRound++;room.dealTurnsInCycle=0;startDealOpenTurn(room,true)}
 function startDealBanker(room,finalBank=false){if(room.phase==="finished")return;const active=dealActive(room);if(!active.length)return finishDealGame(room);room.phase="deal-bank";room.deadline=0;room.dealFinalBank=finalBank;room.dealBankerStage="calling";room.dealOffers={};room.dealChoices={};for(const p of active)room.dealOffers[p.id]=calculateDealOffer(room,p);room.message="The banker is calling…";broadcast(room);setTimeout(()=>{if(room.phase!=="deal-bank"||room.dealBankerStage!=="calling")return;room.dealBankerStage="deciding";room.message="The banker is reviewing the remaining values…";broadcast(room)},1400);setTimeout(()=>{if(room.phase!=="deal-bank"||!['calling','deciding'].includes(room.dealBankerStage))return;room.dealBankerStage="offer";room.deadline=Date.now()+30000;room.message=finalBank?"FINAL OFFERS: Deal or keep your personal case?":"The banker has made individual offers. Deal or No Deal?";broadcast(room)},3200)}
 function completeDealOpenTurn(room){room.dealTurnsInCycle++;const activeCount=dealActive(room).length;if(!dealClosedUnowned(room).length)return startDealBanker(room,true);if(room.dealTurnsInCycle>=activeCount)return startDealBanker(room,false);startDealOpenTurn(room,true)}
@@ -267,10 +270,10 @@ async function api(req, res, route) {
         const gold=room.players.filter(p=>p.team==="gold").length,blue=room.players.filter(p=>p.team==="blue").length;
         if(gold<2||blue<2)return json(res,409,{error:"Team mode needs at least two players on Gold Team and two on Blue Team."});
       }
-      room.players.forEach(p=>p.score=0);room.surveyQuestions=chooseSurveys(5);room.surveyIndex=0;room.found=new Set();room.phase="survey";room.round=1;room.deadline=Date.now()+30000;room.winnerId=null;room.winnerTeam=null;room.message="Survey is live—submit your best answers!";broadcast(room);return json(res,200,{ok:true});
+      room.players.forEach(p=>p.score=0);room.surveyQuestions=chooseSurveys(5);room.surveyIndex=0;room.found=new Set();room.phase="survey";room.round=1;room.deadline=Date.now()+SURVEY_ROUND_MS;room.winnerId=null;room.winnerTeam=null;room.message="The 60-second survey is live—submit your best answers!";broadcast(room);return json(res,200,{ok:true});
     }
     room.players.forEach(p => {p.strikes=0; p.eliminated=false;p.score=0;}); room.phase="playing"; room.turn=crypto.randomInt(room.players.length);
-    room.currentWord=STARTERS[crypto.randomInt(STARTERS.length)]; room.used=new Set([room.currentWord]); room.round=1; room.winnerId=null; room.deadline=Date.now()+room.timerSeconds*1000; room.message="Game on! Link a word."; broadcast(room); return json(res, 200, {ok:true});
+    room.currentWord=STARTERS[crypto.randomInt(STARTERS.length)]; room.used=new Set([room.currentWord]); room.round=1; room.winnerId=null;room.timerSeconds=wordTurnSeconds(room); room.deadline=Date.now()+room.timerSeconds*1000; room.message="Game on! Four letters minimum—think fast!"; broadcast(room); return json(res, 200, {ok:true});
   }
   if(route==="/api/royal-roll"){
     if(room.phase!=="royal"||room.royalOrder[room.royalTurn]!==player.id||room.royalDice!==null)return json(res,409,{error:"You cannot roll now."});room.royalDice=crypto.randomInt(1,7);const rolled=room.royalDice;room.royalLegal=royalLegal(room,player.id,room.royalDice);room.message=`${player.name} rolled ${room.royalDice}.`;broadcast(room);if(room.royalLegal.length===0)setTimeout(()=>{if(room.phase==="royal"&&room.royalOrder[room.royalTurn]===player.id&&room.royalDice===rolled)royalNext(room)},1000);else if(room.royalLegal.length===1){const only=room.royalLegal[0];setTimeout(()=>{if(room.phase==="royal"&&room.royalOrder[room.royalTurn]===player.id&&room.royalDice===rolled)royalMove(room,player.id,only)},850);}return json(res,200,{ok:true,dice:rolled});
@@ -296,7 +299,7 @@ async function api(req, res, route) {
   if(route==="/api/draw-guess"){
     if(room.phase!=="draw"||player.id===room.drawerId||room.guessed.has(player.id))return json(res,409,{error:"You cannot guess right now."});
     const guess=cleanPhrase(body.guess);if(!guess)return json(res,400,{error:"Enter a guess."});
-    if(similar(guess,cleanPhrase(room.drawWord))){const remaining=Math.max(0,room.deadline-Date.now()),base=100,speed=Math.round(400*remaining/60000),first=room.guessed.size===0?100:0,gained=base+speed+first;player.score+=gained;room.guessed.add(player.id);const drawer=room.players.find(p=>p.id===room.drawerId);if(drawer)drawer.score+=50;room.lastGuesses.push({name:player.name,text:"GUESSED IT!",correct:true});room.message=`${player.name} guessed correctly for ${gained} points!`;if(room.guessed.size>=room.players.length-1)finishDrawTurn(room);else broadcast(room);return json(res,200,{ok:true,points:gained});}
+    if(similar(guess,cleanPhrase(room.drawWord))){const remaining=Math.max(0,room.deadline-Date.now()),gained=calculateDrawScore(remaining,room.guessed.size===0);player.score=Math.min(100,player.score+gained);room.guessed.add(player.id);const drawer=room.players.find(p=>p.id===room.drawerId);if(drawer)drawer.score=Math.min(100,drawer.score+1);room.lastGuesses.push({name:player.name,text:"GUESSED IT!",correct:true,points:gained});room.message=`${player.name} guessed correctly for ${gained} points!`;if(room.guessed.size>=room.players.length-1)finishDrawTurn(room);else broadcast(room);return json(res,200,{ok:true,points:gained});}
     room.lastGuesses.push({name:player.name,text:String(body.guess).slice(0,28),correct:false});room.message=`${player.name} submitted a guess.`;broadcast(room);return json(res,200,{ok:false});
   }
   if(route==="/api/next-draw"){
@@ -322,7 +325,7 @@ async function api(req, res, route) {
     if (room.phase !== "playing") return json(res, 409, {error:"The game is not active."});
     if (room.players[room.turn].id !== player.id) return json(res, 409, {error:"Wait for your turn."});
     const word = cleanWord(body.word);
-    if (word.length < 2) { strike(room, player, "enter a word with at least two letters"); return json(res, 200, {ok:false}); }
+    if (!validWordLength(word)) { strike(room, player, "words must contain at least four letters"); return json(res, 200, {ok:false}); }
     if (room.used.has(word)) { strike(room, player, `${word} was already used`); return json(res, 200, {ok:false}); }
     if (word[0] !== room.currentWord.at(-1)) { strike(room, player, `${word} must begin with ${room.currentWord.at(-1)}`); return json(res, 200, {ok:false}); }
     room.currentWord=word; room.used.add(word);player.score+=100; room.round++; room.message=`${player.name} linked ${word}!`; nextTurn(room); return json(res, 200, {ok:true});
@@ -344,8 +347,11 @@ async function api(req, res, route) {
   if(route==="/api/voice-state"){
     player.voiceOn=Boolean(body.enabled);room.voiceSignals=room.voiceSignals.filter(s=>s.from!==player.id&&s.to!==player.id);broadcast(room);return json(res,200,{ok:true});
   }
+  if(route==="/api/voice-ack"){
+    player.voiceSignalAck=Math.max(player.voiceSignalAck||0,Number(body.signalId)||0);room.voiceSignals=room.voiceSignals.filter(s=>s.to!==player.id||s.id>player.voiceSignalAck);return json(res,200,{ok:true});
+  }
   if(route==="/api/voice-signal"){
-    const target=room.players.find(p=>p.id===body.to);if(!target||target.id===player.id)return json(res,400,{error:"Voice recipient is unavailable."});if(!["offer","answer","ice"].includes(body.type))return json(res,400,{error:"Invalid voice signal."});room.voiceSignals.push({id:++room.voiceSignalSeq,from:player.id,to:target.id,type:body.type,payload:body.payload});if(room.voiceSignals.length>400)room.voiceSignals.splice(0,room.voiceSignals.length-300);broadcast(room);return json(res,200,{ok:true});
+    const target=room.players.find(p=>p.id===body.to);if(!player.voiceOn||!target?.voiceOn||target.id===player.id)return json(res,400,{error:"Voice recipient is unavailable."});if(!["offer","answer","ice"].includes(body.type))return json(res,400,{error:"Invalid voice signal."});room.voiceSignals.push({id:++room.voiceSignalSeq,from:player.id,to:target.id,type:body.type,payload:body.payload});if(room.voiceSignals.length>400)room.voiceSignals.splice(0,room.voiceSignals.length-300);broadcast(room);return json(res,200,{ok:true});
   }
   return json(res, 404, {error:"Unknown action."});
 }
@@ -375,4 +381,4 @@ if (require.main === module) {
   server.listen(PORT, "0.0.0.0", () => console.log(`TM's GAME ROOM running on http://localhost:${PORT}`));
 }
 
-module.exports = {cleanName, cleanWord, cleanPhrase, similar, server, __test:{royalLegal,royalMove,royalTimeout,removePlayer,smoothStrokePoints,cleanChat,addChatMessage,finishSurveyQuestion,startNextSurvey,finishDrawTurn,nextDrawTurn,leaderboard,recordResults,freshStats,selectDealCase,openDealCase,finishDealGame,calculateDealOffer}};
+module.exports = {cleanName, cleanWord, cleanPhrase, similar, server, __test:{SURVEY_ROUND_MS,validWordLength,wordTurnSeconds,calculateDrawScore,royalLegal,royalMove,royalTimeout,removePlayer,smoothStrokePoints,cleanChat,addChatMessage,finishSurveyQuestion,startNextSurvey,finishDrawTurn,nextDrawTurn,leaderboard,recordResults,freshStats,selectDealCase,openDealCase,finishDealGame,calculateDealOffer}};
